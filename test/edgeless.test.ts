@@ -55,6 +55,14 @@ function pages(documentId = 'doc') {
   })
 }
 
+function svgViewBox(svg: string) {
+  const match = /viewBox="([^"]+)"/u.exec(svg)
+  const value = match?.[1]
+  assert.ok(value !== undefined)
+  const [x, y, width, height] = value.split(' ').map(Number) as [number, number, number, number]
+  return { x, y, width, height, right: x + width, bottom: y + height }
+}
+
 function surfaceDocument(
   elements: Record<string, unknown>,
   surfaceChildren: BlockSpec[] = [],
@@ -262,7 +270,7 @@ it('resolves connector geometry from document blocks outside the surface', () =>
   const result = convertPage(document, pages())
   const svg = result.diagrams[0]?.contents ?? ''
   assert.match(svg, /<path d="M 0 0 L 200 140"/u)
-  assert.match(svg, /viewBox="-16 -16 233 173"/u)
+  assert.match(svg, /viewBox="-18 -18 236 176"/u)
 })
 
 it('bounds SVGs only to the current surface while retaining its rendered children', () => {
@@ -307,7 +315,7 @@ it('bounds SVGs only to the current surface while retaining its rendered childre
 
   const result = convertPage(document, pages())
   const diagram = result.diagrams.find(candidate => candidate.path === 'assets/diagrams/doc--surface.svg')
-  assert.match(diagram?.contents ?? '', /viewBox="-16 -16 282 112" width="282" height="112"/u)
+  assert.match(diagram?.contents ?? '', /viewBox="-16.5 -16.5 344.5 113" width="344.5" height="113"/u)
   assert.match(diagram?.contents ?? '', />Current<\/tspan>/u)
 })
 
@@ -634,6 +642,11 @@ it('preserves valid astral Unicode while escaping generated SVG', () => {
 it('preserves adjacent list runs when rendering ordered surface children', () => {
   const document = surfaceDocument({}, [
     { id: 'second', flavour: 'affine:list', type: 'numbered', text: 'Second', props: { 'prop:index': 'a2' } },
+    {
+      id: 'svg-only',
+      flavour: 'affine:edgeless-text',
+      props: { 'prop:index': 'a15', 'prop:xywh': '[0,50,20,20]' },
+    },
     { id: 'first', flavour: 'affine:list', type: 'numbered', text: 'First', props: { 'prop:index': 'a1' } },
   ])
 
@@ -704,4 +717,78 @@ it('rejects native elements owned by multiple groups', () => {
     () => convertPage(document, pages()),
     /native element shape belongs to multiple groups first and second/iu,
   )
+})
+
+it('bounds wide shape strokes by their painted extent plus the SVG margin', () => {
+  const result = convertPage(surfaceDocument({
+    shape: {
+      id: 'shape',
+      type: 'shape',
+      shapeType: 'rect',
+      xywh: '[0,0,100,80]',
+      strokeWidth: 80,
+    },
+  }), pages())
+
+  const box = svgViewBox(result.diagrams[0]?.contents ?? '')
+  assert.deepEqual(box, { x: -56, y: -56, width: 212, height: 192, right: 156, bottom: 136 })
+})
+
+it('bounds long multiline native text for every supported alignment', () => {
+  const longLine = 'abcdefghijklmnopqrst'
+  const cases = [
+    ['start', 100, 500],
+    ['center', -90, 310],
+    ['right', -280, 120],
+  ] as const
+  for (const [textAlign, paintedLeft, paintedRight] of cases) {
+    const result = convertPage(surfaceDocument({
+      label: {
+        id: 'label',
+        type: 'text',
+        xywh: '[100,100,20,20]',
+        text: `Tiny\n${longLine}`,
+        fontSize: 20,
+        textAlign,
+      },
+    }), pages())
+
+    const box = svgViewBox(result.diagrams[0]?.contents ?? '')
+    assert.equal(box.x, paintedLeft - 16, textAlign)
+    assert.equal(box.right, paintedRight + 16, textAlign)
+    assert.equal(box.y, 84, textAlign)
+    assert.equal(box.bottom, 180, textAlign)
+  }
+})
+
+it('bounds connector arrow markers beyond wide strokes and the fixed margin', () => {
+  const result = convertPage(surfaceDocument({
+    connector: {
+      id: 'connector',
+      type: 'connector',
+      source: { x: 0, y: 0 },
+      target: { x: 100, y: 0 },
+      strokeWidth: 10,
+      frontEndpointStyle: 'Arrow',
+      rearEndpointStyle: 'Arrow',
+    },
+  }), pages())
+
+  const box = svgViewBox(result.diagrams[0]?.contents ?? '')
+  assert.ok(box.x < -60)
+  assert.ok(box.y < -60)
+  assert.ok(box.right > 160)
+  assert.ok(box.bottom > 60)
+})
+
+it('rejects non-finite painted bounds instead of emitting an invalid viewBox', () => {
+  assert.throws(() => convertPage(surfaceDocument({
+    shape: {
+      id: 'shape',
+      type: 'shape',
+      shapeType: 'rect',
+      xywh: `[0,0,${Number.MAX_VALUE},10]`,
+      strokeWidth: Number.MAX_VALUE,
+    },
+  }), pages()), /non-finite derived SVG geometry/iu)
 })

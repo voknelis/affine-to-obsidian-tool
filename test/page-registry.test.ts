@@ -217,6 +217,51 @@ it('deduplicates active children of same-named active and trash containers', () 
   assert.equal(registry.requirePath('child-b'), 'Root/Same--child-b.md')
 })
 
+it('checks container notes against child states populated by cross-trash descendants', () => {
+  const registry = buildPageRegistry(workspace([
+    page('a', 'Root'),
+    page('b', 'Same', { trash: true }),
+    page('c', 'Same'),
+    page('d', 'Same'),
+    page('e', 'Leaf'),
+  ]), new Map([
+    ['b', 'a'],
+    ['c', 'b'],
+    ['d', 'a'],
+    ['e', 'd'],
+  ]))
+
+  assert.equal(registry.requirePath('a'), 'Root/Root.md')
+  assert.equal(registry.requirePath('b'), '_trash/Root/Same/Same.md')
+  assert.equal(registry.requirePath('c'), 'Root/Same/Same.md')
+  assert.equal(registry.requirePath('d'), 'Root/Same--d/Same--d.md')
+  assert.equal(registry.requirePath('e'), 'Root/Same--d/Leaf.md')
+})
+
+it('rejects container notes that collide with cross-trash child directories', () => {
+  const registry = buildPageRegistry(workspace([
+    page('a', 'Root'),
+    page('b', 'Same', { trash: true }),
+    page('c', 'Same.md'),
+    page('d', 'Same'),
+    page('e', 'Leaf'),
+    page('f', 'Leaf'),
+  ]), new Map([
+    ['b', 'a'],
+    ['c', 'b'],
+    ['d', 'a'],
+    ['e', 'd'],
+    ['f', 'c'],
+  ]))
+
+  assert.equal(registry.requirePath('a'), 'Root/Root.md')
+  assert.equal(registry.requirePath('b'), '_trash/Root/Same/Same.md')
+  assert.equal(registry.requirePath('c'), 'Root/Same/Same.md/Same.md.md')
+  assert.equal(registry.requirePath('f'), 'Root/Same/Same.md/Leaf.md')
+  assert.equal(registry.requirePath('d'), 'Root/Same--d/Same--d.md')
+  assert.equal(registry.requirePath('e'), 'Root/Same--d/Leaf.md')
+})
+
 it('reserves output directory names for root container pages', () => {
   const registry = buildPageRegistry(workspace([
     page('assets', 'assets'),

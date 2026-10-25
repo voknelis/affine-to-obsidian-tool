@@ -1,5 +1,5 @@
 const MARKDOWN_METACHARACTER = /([\\`*_[\]{}()#+\-!|<>~=$%&])/gu
-const ORDERED_LIST_MARKER = /^(\d+)([.)])/gmu
+const ORDERED_LIST_MARKER = /^( {0,3}\d+)([.)])/gmu
 const LINE_BREAK = /\r\n?|\n/gu
 
 /** Escape source text so it remains literal in Obsidian Flavored Markdown. */
@@ -8,8 +8,8 @@ export function escapeMarkdownText(value: string): string {
     .replace(/\r\n?/gu, '\n')
     .replace(MARKDOWN_METACHARACTER, '\\$1')
     .replace(ORDERED_LIST_MARKER, '$1\\$2')
-    .replace(/^(?: {4}|\t)/gmu, indentation =>
-      indentation === '\t' ? '&#9;' : '&#32;   ')
+    .replace(/^(?: {4}| {0,3}\t)/gmu, indentation =>
+      indentation.endsWith('\t') ? `${indentation.slice(0, -1)}&#9;` : '&#32;   ')
 }
 
 /** Escape source text for a heading or link label that must stay on one line. */

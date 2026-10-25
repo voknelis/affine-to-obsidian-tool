@@ -196,7 +196,7 @@ it('handles an empty page and empty paragraph, quote, list, and code blocks', ()
     { id: 'list', flavour: 'affine:list', type: 'bulleted', text: '' },
     { id: 'code', flavour: 'affine:code', text: '' },
   ])
-  assert.equal(render(document), expected('Document', '\n\n>\n\n- \n\n```\n\n```'))
+  assert.equal(render(document), expected('Document', '>\n\n- \n\n```\n\n```'))
 })
 
 it('uses the deterministic untitled heading and escapes Markdown in titles', () => {

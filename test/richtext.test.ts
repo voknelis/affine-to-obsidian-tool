@@ -169,6 +169,74 @@ it('escapes ordered-list markers and code indentation split across deltas', () =
   assert.equal(indented.markdown, '  &#32; item')
 })
 
+it('escapes indented and adjacent ordered-list markers', () => {
+  assert.equal(renderRichText(richText({ text: '  1. item' }), registry()).markdown, '  1\\. item')
+  assert.equal(renderRichText(richText({ text: '  1) item' }), registry()).markdown, '  1\\) item')
+
+  const indented = renderRichText(
+    richText(
+      { text: '  1', attributes: { bold: false } },
+      { text: '. item' },
+    ),
+    registry(),
+  )
+  const parenthesized = renderRichText(
+    richText(
+      { text: '1', attributes: { bold: false } },
+      { text: ') item' },
+    ),
+    registry(),
+  )
+  assert.equal(indented.markdown, '  1\\. item')
+  assert.equal(parenthesized.markdown, '1\\) item')
+})
+
+it('escapes whole and cross-delta tab indentation', () => {
+  assert.equal(renderRichText(richText({ text: '  \tcode' }), registry()).markdown, '  &#9;code')
+
+  const splitSpaces = renderRichText(
+    richText(
+      { text: ' ', attributes: { bold: false } },
+      { text: '  ', attributes: { italic: false } },
+      { text: '\tcode' },
+    ),
+    registry(),
+  )
+  const splitTabs = renderRichText(
+    richText(
+      { text: ' ', attributes: { bold: false } },
+      { text: '\t', attributes: { italic: false } },
+      { text: '\tcode' },
+    ),
+    registry(),
+  )
+  assert.equal(splitSpaces.markdown, '   &#9;code')
+  assert.equal(splitTabs.markdown, ' &#9;&#9;code')
+})
+
+it('coalesces CRLF split across deltas without merging coverage identities', () => {
+  const document = new Y.Doc()
+  const block = new Y.Map<unknown>()
+  document.getMap('blocks').set('block', block)
+  const text = new Y.Text()
+  block.set('prop:text', text)
+  text.insert(0, 'first\r', { color: 'red' })
+  text.insert(text.length, '\nsecond', {})
+  const coverage = new DocumentCoverageLedger('doc', [{ id: 'block', source: block }])
+
+  const result = renderRichText(text, registry(), coverage)
+  coverage.recordBlock('block', 'rendered')
+  const completed = coverage.complete()
+
+  assert.equal(result.markdown, 'first<br>second')
+  assert.deepEqual(completed.richTextDeltas, {
+    total: 2,
+    rendered: 1,
+    structuralMetadataOnly: 0,
+    approvedLoss: 1,
+  })
+})
+
 it('moves boundary whitespace outside every delimiter-based mark and link', () => {
   const cases = [
     { attributes: { bold: true }, expected: ' **text** ' },

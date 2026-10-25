@@ -114,29 +114,39 @@ function enabled(attributes: Attributes, name: string): boolean {
   return attributes[name] === true
 }
 
+interface LineContext {
+  prefix: string
+  endedWithCarriageReturn: boolean
+}
+
 function escapeAdjacentLineStart(rendered: string, value: string, linePrefix: string): string {
-  if (/^\d+$/u.test(linePrefix) && value.startsWith('.')) {
-    return rendered.replace(/^\./u, '\\.')
-  }
+  const escaped = /^ {0,3}\d+$/u.test(linePrefix) && value.startsWith('.')
+    ? rendered.replace(/^\./u, '\\.')
+    : rendered
   const leadingSpaces = /^ */u.exec(value)?.[0].length ?? 0
   if (
     /^ {1,3}$/u.test(linePrefix)
     && linePrefix.length + leadingSpaces >= 4
-    && rendered.startsWith(' ')
+    && escaped.startsWith(' ')
   ) {
-    return `&#32;${rendered.slice(1)}`
+    return `&#32;${escaped.slice(1)}`
   }
-  return rendered
+  return escaped
 }
 
-function advanceLinePrefix(linePrefix: string, value: string): string {
+function advanceLine(line: LineContext, value: string): void {
+  if (value.length === 0) {
+    return
+  }
   const lastBreak = Math.max(value.lastIndexOf('\n'), value.lastIndexOf('\r'))
-  return lastBreak === -1 ? linePrefix + value : value.slice(lastBreak + 1)
+  line.prefix = lastBreak === -1 ? line.prefix + value : value.slice(lastBreak + 1)
+  line.endedWithCarriageReturn = value.endsWith('\r')
 }
 
-function renderPlainText(value: string, linePrefix: string): string {
-  const escaped = escapeMarkdownText(value)
-  return escapeAdjacentLineStart(escaped, value, linePrefix).replaceAll('\n', '<br>')
+function renderPlainText(value: string, line: LineContext): string {
+  const source = line.endedWithCarriageReturn && value.startsWith('\n') ? value.slice(1) : value
+  const escaped = escapeMarkdownText(source)
+  return escapeAdjacentLineStart(escaped, source, line.prefix).replaceAll('\n', '<br>')
 }
 
 function escapeCodeWikilinkAlias(value: string): string {
@@ -214,7 +224,7 @@ export function renderRichText(
   coverage?: DocumentCoverageLedger,
 ): RenderedRichText {
   const markdown: string[] = []
-  let linePrefix = ''
+  const line: LineContext = { prefix: '', endedWithCarriageReturn: false }
   const losses: RichTextLoss[] = []
   const source = coverage?.richTextSource(text)
 
@@ -244,20 +254,21 @@ export function renderRichText(
       ? { leading: '', core: sourceText, trailing: '' }
       : textBoundaries(sourceText)
 
-    const renderedLeading = renderPlainText(leading, linePrefix)
-    linePrefix = advanceLinePrefix(linePrefix, leading)
-    let rendered = reference === undefined ? renderPlainText(core, linePrefix) : escapeWikilinkAlias(core)
+    const renderedLeading = renderPlainText(leading, line)
+    advanceLine(line, leading)
+    const coreText = line.endedWithCarriageReturn && core.startsWith('\n') ? core.slice(1) : core
+    let rendered = reference === undefined ? renderPlainText(core, line) : escapeWikilinkAlias(coreText)
     if (code) {
-      rendered = escapeInlineCode(sourceText)
+      rendered = escapeInlineCode(coreText)
     }
-    rendered = renderFormattedText(rendered, attributes, core, code)
-    linePrefix = advanceLinePrefix(linePrefix, core)
+    rendered = renderFormattedText(rendered, attributes, coreText, code)
+    advanceLine(line, core)
 
     if (reference !== undefined) {
       const target = pages.require(reference.pageId)
       const path = escapeWikilinkTarget(target.outputPath)
       const alias = code ? escapeCodeWikilinkAlias(rendered) : rendered
-      rendered = core.length === 0 && !code ? `[[${path}]]` : `[[${path}|${alias}]]`
+      rendered = coreText.length === 0 && !code ? `[[${path}]]` : `[[${path}|${alias}]]`
     }
     else if (link !== undefined) {
       rendered = `[${rendered}](${escapeMarkdownUrl(normalizeExternalUrl(link))})`
@@ -268,8 +279,8 @@ export function renderRichText(
       lostColors.length === 0 ? 'rendered' : 'approved-loss',
       lostColors.length === 0 ? undefined : `visual-color:${lostColors.join(',')}`,
     )
-    const renderedTrailing = renderPlainText(trailing, linePrefix)
-    linePrefix = advanceLinePrefix(linePrefix, trailing)
+    const renderedTrailing = renderPlainText(trailing, line)
+    advanceLine(line, trailing)
     markdown.push(`${renderedLeading}${rendered}${renderedTrailing}`)
   }
 

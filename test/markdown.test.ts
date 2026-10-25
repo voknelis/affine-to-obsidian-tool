@@ -31,6 +31,17 @@ it('escapes math, comments, entities, and parenthesized ordered markers literall
   assert.equal(escapeMarkdownText('1) item\n22. item'), '1\\) item\n22\\. item')
 })
 
+it('escapes up to three spaces before ordered markers and indentation tabs', () => {
+  assert.equal(
+    escapeMarkdownText('  1. item\n   22) item'),
+    '  1\\. item\n   22\\) item',
+  )
+  assert.equal(
+    escapeMarkdownText(' \tone\n  \ttwo\n   \tthree'),
+    ' &#9;one\n  &#9;two\n   &#9;three',
+  )
+})
+
 it('encodes code-block indentation on initial and continuation lines', () => {
   assert.equal(
     escapeMarkdownText('    initial\nnext\n\tTabbed\n    final'),

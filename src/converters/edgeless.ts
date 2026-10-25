@@ -30,6 +30,26 @@ interface Geometry {
   readonly height: number
 }
 
+interface PaintedSvg {
+  readonly contents: string
+  readonly bounds: readonly Geometry[]
+}
+
+type TextAnchor = 'start' | 'middle' | 'end'
+
+function expandGeometry(box: Geometry, amount: number): Geometry {
+  return {
+    x: box.x - amount,
+    y: box.y - amount,
+    width: box.width + amount * 2,
+    height: box.height + amount * 2,
+  }
+}
+
+function pointGeometry(point: Point, radius: number): Geometry {
+  return { x: point.x - radius, y: point.y - radius, width: radius * 2, height: radius * 2 }
+}
+
 interface NativeElement {
   readonly id: string
   readonly type: string
@@ -270,12 +290,28 @@ function textTag(
   y: number,
   size: number,
   fill: string,
-  anchor = 'start',
+  anchor: TextAnchor = 'start',
 ): string {
   const lines = text.replace(/\r\n?/gu, '\n').split('\n')
   const tspans = lines.map((line, index) =>
     `<tspan x="${svgNumber(x)}"${index === 0 ? '' : ` dy="${svgNumber(size * 1.2)}"`}>${xml(line)}</tspan>`).join('')
   return `<text x="${svgNumber(x)}" y="${svgNumber(y)}" font-family="sans-serif" font-size="${svgNumber(size)}" fill="${xml(fill)}" text-anchor="${anchor}">${tspans}</text>`
+}
+
+function textPaintedBounds(
+  text: string,
+  x: number,
+  y: number,
+  size: number,
+  anchor: TextAnchor = 'start',
+): Geometry {
+  const lines = text.replace(/\r\n?/gu, '\n').split('\n')
+  const maxLineLength = lines.reduce((longest, line) => Math.max(longest, line.length), 0)
+  const width = maxLineLength * size
+  const left = anchor === 'middle' ? x - width / 2 : anchor === 'end' ? x - width : x
+  const top = y - size
+  const lastBaseline = y + (lines.length - 1) * size * 1.2
+  return { x: left, y: top, width, height: lastBaseline - top + size }
 }
 
 function plainBlockText(block: AffineBlock, context: BlockConversionContext, active = new Set<string>()): string {
@@ -543,7 +579,7 @@ function groupNativeElements(
 
 interface ConnectorPathResult {
   readonly paths: ReadonlyMap<string, string>
-  readonly bounds: readonly Geometry[]
+  readonly endpoints: ReadonlyMap<string, readonly Point[]>
 }
 
 function connectorEndpoint(
@@ -626,7 +662,7 @@ function buildConnectorPaths(
   blockGeometries: ReadonlyMap<string, Geometry>,
   elementGeometries: ReadonlyMap<string, Geometry>,
 ): ConnectorPathResult {
-  const bounds: Geometry[] = []
+  const endpointsById = new Map<string, readonly Point[]>()
   const paths = new Map<string, string>()
   for (const element of elements) {
     if (element.type !== 'connector') {
@@ -634,15 +670,12 @@ function buildConnectorPaths(
     }
     const endpoints = connectorEndpoints(block, element, blockGeometries, elementGeometries)
     paths.set(element.id, connectorPath(block, element, endpoints))
-    for (const point of endpoints) {
-      bounds.push({ x: point.x, y: point.y, width: 1, height: 1 })
-    }
+    endpointsById.set(element.id, endpoints)
   }
-  return { paths, bounds }
+  return { paths, endpoints: endpointsById }
 }
 
-interface NativeSvgResult {
-  readonly contents: string
+interface NativeSvgResult extends PaintedSvg {
   readonly nativeTexts: readonly string[]
 }
 
@@ -670,11 +703,12 @@ function renderNativeShape(
   context: BlockConversionContext,
   element: NativeElement,
   box: Geometry,
-): string {
+): PaintedSvg {
   const fill = element.value.filled === false ? 'none' : color(element.value.fillColor, '#ffffff', block, `shape ${element.id} fillColor`)
   const stroke = color(element.value.strokeColor, '#000000', block, `shape ${element.id} strokeColor`)
   const width = positiveProperty(element.value, 'strokeWidth', 1, block)
   const common = `fill="${xml(fill)}" stroke="${xml(stroke)}" stroke-width="${svgNumber(width)}"`
+  const bounds: Geometry[] = [expandGeometry(box, width / 2)]
   let output: string
   if (element.value.shapeType === 'rect') {
     const radius = nonnegativeProperty(element.value, 'radius', 0, block)
@@ -694,9 +728,13 @@ function renderNativeShape(
   }
   const shapeText = svgText(nativeProperty(element, 'text'), block, context, `shape ${element.id} text`)
   if (shapeText.length > 0) {
-    output += textTag(shapeText, box.x + 8, box.y + 24, positiveProperty(element.value, 'fontSize', 16, block), color(element.value.color, '#000000', block, `shape ${element.id} color`))
+    const size = positiveProperty(element.value, 'fontSize', 16, block)
+    const x = box.x + 8
+    const y = box.y + 24
+    output += textTag(shapeText, x, y, size, color(element.value.color, '#000000', block, `shape ${element.id} color`))
+    bounds.push(textPaintedBounds(shapeText, x, y, size))
   }
-  return output
+  return { contents: output, bounds }
 }
 
 function renderNativeText(
@@ -705,26 +743,55 @@ function renderNativeText(
   element: NativeElement,
   box: Geometry,
   nativeTextValues: Map<string, string>,
-): string {
+): PaintedSvg {
   const size = positiveProperty(element.value, 'fontSize', 16, block)
   const anchor = element.value.textAlign === 'center' ? 'middle' : element.value.textAlign === 'right' ? 'end' : 'start'
   const x = anchor === 'middle' ? box.x + box.width / 2 : anchor === 'end' ? box.x + box.width : box.x
+  const y = box.y + size
   const text = svgText(nativeProperty(element, 'text'), block, context, `text element ${element.id} text`)
   nativeTextValues.set(element.id, text)
-  return textTag(text, x, box.y + size, size, color(element.value.color, '#000000', block, `text element ${element.id} color`), anchor)
+  const contents = textTag(text, x, y, size, color(element.value.color, '#000000', block, `text element ${element.id} color`), anchor)
+  const bounds = text.length === 0 ? [box] : [box, textPaintedBounds(text, x, y, size, anchor)]
+  return { contents, bounds }
+}
+
+function connectorPaintedBounds(
+  endpoints: readonly Point[],
+  strokeWidth: number,
+  frontArrow: boolean,
+  rearArrow: boolean,
+): Geometry[] {
+  const bounds = endpoints.map(point => pointGeometry(point, strokeWidth * 2))
+  const markerRadius = Math.hypot(9, 5) * strokeWidth * 0.6
+  const first = endpoints[0]
+  const last = endpoints.at(-1)
+  if (frontArrow && first !== undefined) {
+    bounds.push(pointGeometry(first, markerRadius))
+  }
+  if (rearArrow && last !== undefined) {
+    bounds.push(pointGeometry(last, markerRadius))
+  }
+  return bounds
 }
 
 function renderNativeConnector(
   block: AffineBlock,
   element: NativeElement,
   connectorPaths: ReadonlyMap<string, string>,
-): string {
+  connectorEndpoints: ReadonlyMap<string, readonly Point[]>,
+): PaintedSvg {
   const front = element.value.frontEndpointStyle ?? 'None'
   const rear = element.value.rearEndpointStyle ?? 'None'
   if ((front !== 'None' && front !== 'Arrow') || (rear !== 'None' && rear !== 'Arrow')) {
     fail(block, `connector ${element.id} has an unsupported endpoint style.`)
   }
-  return `<path d="${connectorPaths.get(element.id)}" fill="none" stroke="${xml(color(element.value.stroke, '#000000', block, `connector ${element.id} stroke`))}" stroke-width="${svgNumber(positiveProperty(element.value, 'strokeWidth', 1, block))}"${rear === 'Arrow' ? ' marker-end="url(#arrow)"' : ''}${front === 'Arrow' ? ' marker-start="url(#arrow)"' : ''}/>`
+  const strokeWidth = positiveProperty(element.value, 'strokeWidth', 1, block)
+  const contents = `<path d="${connectorPaths.get(element.id)}" fill="none" stroke="${xml(color(element.value.stroke, '#000000', block, `connector ${element.id} stroke`))}" stroke-width="${svgNumber(strokeWidth)}"${rear === 'Arrow' ? ' marker-end="url(#arrow)"' : ''}${front === 'Arrow' ? ' marker-start="url(#arrow)"' : ''}/>`
+  const endpoints = connectorEndpoints.get(element.id) ?? []
+  return {
+    contents,
+    bounds: connectorPaintedBounds(endpoints, strokeWidth, front === 'Arrow', rear === 'Arrow'),
+  }
 }
 
 function renderNativeSvg(
@@ -735,10 +802,12 @@ function renderNativeSvg(
   elementGeometries: ReadonlyMap<string, Geometry>,
   grouped: ReadonlySet<string>,
   connectorPaths: ReadonlyMap<string, string>,
+  connectorEndpoints: ReadonlyMap<string, readonly Point[]>,
 ): NativeSvgResult {
   const nativeTextValues = new Map<string, string>()
   const rendered = new Set<string>()
   const active = new Set<string>()
+  const bounds: Geometry[] = []
   function renderElement(element: NativeElement): string {
     if (rendered.has(element.id)) {
       return ''
@@ -747,30 +816,31 @@ function renderNativeSvg(
       fail(block, `native group cycle includes ${element.id}.`)
     }
     active.add(element.id)
-    let output: string
+    let painted: PaintedSvg
     if (element.type === 'group') {
-      output = renderNativeGroup(block, context, element, byId, renderElement)
+      painted = { contents: renderNativeGroup(block, context, element, byId, renderElement), bounds: [] }
     }
     else if (element.type === 'shape') {
       const box = elementGeometries.get(element.id)
       if (box === undefined) {
         fail(block, `shape ${element.id} has no geometry.`)
       }
-      output = renderNativeShape(block, context, element, box)
+      painted = renderNativeShape(block, context, element, box)
     }
     else if (element.type === 'text') {
       const box = elementGeometries.get(element.id)
       if (box === undefined) {
         fail(block, `text element ${element.id} has no geometry.`)
       }
-      output = renderNativeText(block, context, element, box, nativeTextValues)
+      painted = renderNativeText(block, context, element, box, nativeTextValues)
     }
     else {
-      output = renderNativeConnector(block, element, connectorPaths)
+      painted = renderNativeConnector(block, element, connectorPaths, connectorEndpoints)
     }
+    bounds.push(...painted.bounds)
     active.delete(element.id)
     rendered.add(element.id)
-    return output
+    return painted.contents
   }
 
   const roots = elements.filter(element => !grouped.has(element.id))
@@ -789,7 +859,7 @@ function renderNativeSvg(
     const text = nativeTextValues.get(element.id) ?? ''
     return text.trim().length > 0 ? [text] : []
   })
-  return { contents, nativeTexts }
+  return { contents, nativeTexts, bounds }
 }
 
 interface SurfaceBlocksSvgResult {
@@ -801,18 +871,28 @@ function renderSurfaceBlock(
   child: AffineBlock,
   context: BlockConversionContext,
   box: Geometry,
-): string {
+): PaintedSvg {
   if (child.flavour === 'affine:frame') {
     const title = svgText(child.source.get('prop:title'), child, context, 'property prop:title', false)
-    return `<g id="${xml(child.id)}"><rect x="${svgNumber(box.x)}" y="${svgNumber(box.y)}" width="${svgNumber(box.width)}" height="${svgNumber(box.height)}" fill="#fff8e7" stroke="#b89b24"/>${textTag(title, box.x + 12, box.y + 26, 20, '#000000')}</g>`
+    const contents = `<g id="${xml(child.id)}"><rect x="${svgNumber(box.x)}" y="${svgNumber(box.y)}" width="${svgNumber(box.width)}" height="${svgNumber(box.height)}" fill="#fff8e7" stroke="#b89b24"/>${textTag(title, box.x + 12, box.y + 26, 20, '#000000')}</g>`
+    const bounds = title.length === 0
+      ? [expandGeometry(box, 0.5)]
+      : [expandGeometry(box, 0.5), textPaintedBounds(title, box.x + 12, box.y + 26, 20)]
+    return { contents, bounds }
   }
   if (child.flavour === 'affine:edgeless-text') {
-    return textTag(plainBlockText(child, context), box.x, box.y + 16, 16, color(child.source.get('prop:color'), '#000000', surface, `edgeless-text ${child.id} prop:color`))
+    const text = plainBlockText(child, context)
+    const contents = textTag(text, box.x, box.y + 16, 16, color(child.source.get('prop:color'), '#000000', surface, `edgeless-text ${child.id} prop:color`))
+    return { contents, bounds: text.length === 0 ? [] : [textPaintedBounds(text, box.x, box.y + 16, 16)] }
   }
   if (child.flavour === 'affine:image' || child.flavour === 'affine:bookmark') {
     const label = child.flavour === 'affine:image' ? 'Image' : child.source.get('prop:title') ?? child.source.get('prop:url') ?? 'Bookmark'
     const text = svgText(label, child, context, 'diagram label', false)
-    return `<rect x="${svgNumber(box.x)}" y="${svgNumber(box.y)}" width="${svgNumber(box.width)}" height="${svgNumber(box.height)}" fill="#ffffff" stroke="#777777"/>${textTag(text, box.x + 8, box.y + 24, 16, '#000000')}`
+    const contents = `<rect x="${svgNumber(box.x)}" y="${svgNumber(box.y)}" width="${svgNumber(box.width)}" height="${svgNumber(box.height)}" fill="#ffffff" stroke="#777777"/>${textTag(text, box.x + 8, box.y + 24, 16, '#000000')}`
+    const bounds = text.length === 0
+      ? [expandGeometry(box, 0.5)]
+      : [expandGeometry(box, 0.5), textPaintedBounds(text, box.x + 8, box.y + 24, 16)]
+    return { contents, bounds }
   }
   return fail(child, 'is not supported as a direct surface child.')
 }
@@ -840,18 +920,20 @@ function renderSurfaceBlocks(
   const { framedChildIds } = surfaceFrameMembership(block, context)
   const orderedBlocks = orderedChildren(block, context)
   const bounds: Geometry[] = []
-  const contents = orderedBlocks.map((child) => {
+  const contents: string[] = []
+  for (const child of orderedBlocks) {
     if (framedChildIds.has(child.id) && child.flavour !== 'affine:frame') {
-      return ''
+      continue
     }
     const box = blockGeometries.get(child.id)
     if (box === undefined) {
-      return ''
+      continue
     }
-    bounds.push(box)
-    return renderSurfaceBlock(block, child, context, box)
-  }).join('')
-  return { contents, bounds }
+    const painted = renderSurfaceBlock(block, child, context, box)
+    contents.push(painted.contents)
+    bounds.push(box, ...painted.bounds)
+  }
+  return { contents: contents.join(''), bounds }
 }
 
 function renderSvg(
@@ -883,36 +965,29 @@ function renderSvg(
     elementGeometries,
     grouped,
     connectors.paths,
+    connectors.endpoints,
   )
   const blockSvg = renderSurfaceBlocks(block, context, blockGeometries)
 
   if (!surfaceGeneratesDiagram(block, context, elements)) {
     return undefined
   }
-  const nativeBounds = elements.flatMap((element) => {
-    if (element.type !== 'shape' && element.type !== 'text') {
-      return []
-    }
-    const box = elementGeometries.get(element.id)
-    return box === undefined ? [] : [box]
-  })
   const bounds: Geometry[] = [
-    ...nativeBounds,
+    ...native.bounds,
     ...blockSvg.bounds,
-    ...connectors.bounds,
   ]
   if (bounds.length === 0) {
     bounds.push({ x: 0, y: 0, width: 1, height: 1 })
   }
-  const minX = Math.min(...bounds.map(box => box.x))
-  const minY = Math.min(...bounds.map(box => box.y))
-  const maxX = Math.max(...bounds.map(box => box.x + box.width))
-  const maxY = Math.max(...bounds.map(box => box.y + box.height))
-  const padding = 16
-  const viewX = minX - padding
-  const viewY = minY - padding
-  const width = Math.max(1, maxX - minX + padding * 2)
-  const height = Math.max(1, maxY - minY + padding * 2)
+  const minX = bounds.reduce((minimum, box) => Math.min(minimum, box.x), Infinity)
+  const minY = bounds.reduce((minimum, box) => Math.min(minimum, box.y), Infinity)
+  const maxX = bounds.reduce((maximum, box) => Math.max(maximum, box.x + box.width), -Infinity)
+  const maxY = bounds.reduce((maximum, box) => Math.max(maximum, box.y + box.height), -Infinity)
+  const margin = 16
+  const viewX = minX - margin
+  const viewY = minY - margin
+  const width = Math.max(1, maxX - minX + margin * 2)
+  const height = Math.max(1, maxY - minY + margin * 2)
   const arrows = elements.some(element => element.type === 'connector'
     && (element.value.frontEndpointStyle === 'Arrow' || element.value.rearEndpointStyle === 'Arrow'))
   const definitions = arrows ? '<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#000000"/></marker></defs>' : ''

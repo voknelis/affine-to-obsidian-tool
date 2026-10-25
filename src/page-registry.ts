@@ -91,6 +91,7 @@ function allocateStem(
   parentId: string | undefined,
   container: boolean,
   state: CollisionState,
+  containerNoteConflicts: (candidate: string) => boolean,
 ): string {
   const stem = sanitizeFilename(page.title, page.id, '.md')
   const key = (candidate: string): string => outputKey(`${candidate}.md`)
@@ -103,6 +104,9 @@ function allocateStem(
     }
     const pathKey = container ? outputKey(candidate) : key(candidate)
     if (state.files.has(pathKey) || state.directories.has(pathKey)) {
+      return true
+    }
+    if (container && containerNoteConflicts(candidate)) {
       return true
     }
     if (!rootActive) {
@@ -229,7 +233,8 @@ function allocateOutputPaths(
   const directories = new Map<string, string>()
   const collisionStates = new Map<string, CollisionState>()
   const stateFor = (directory: string): CollisionState => {
-    const existing = collisionStates.get(directory)
+    const key = outputKey(directory)
+    const existing = collisionStates.get(key)
     if (existing !== undefined) {
       return existing
     }
@@ -238,7 +243,7 @@ function allocateOutputPaths(
       files: new Set<string>(),
       directories: new Set<string>(),
     }
-    collisionStates.set(directory, state)
+    collisionStates.set(key, state)
     return state
   }
   const allocate = (page: AffinePageMetadata): void => {
@@ -250,18 +255,30 @@ function allocateOutputPaths(
     const container = children.has(page.id)
     const containingDirectory = `${page.trash ? '_trash/' : ''}${parentDirectory}`
     const state = stateFor(containingDirectory)
-    const stem = allocateStem(page, parentId, container, state)
+    const containerNoteConflicts = (candidate: string): boolean => {
+      const directory = parentDirectory.length > 0 ? `${parentDirectory}/${candidate}` : candidate
+      const childDirectory = `${page.trash ? '_trash/' : ''}${directory}`
+      const childState = collisionStates.get(outputKey(childDirectory))
+      const noteKey = outputKey(`${candidate}.md`)
+      if (childState === undefined) {
+        return false
+      }
+      return childState.stems.has(noteKey)
+        || childState.files.has(noteKey)
+        || childState.directories.has(noteKey)
+    }
+    const stem = allocateStem(page, parentId, container, state, containerNoteConflicts)
     const directory = parentDirectory.length > 0 ? `${parentDirectory}/${stem}` : stem
     const relativePath = container ? `${directory}/${stem}.md` : `${directory}.md`
     outputPaths.set(page.id, `${page.trash ? '_trash/' : ''}${relativePath}`)
     directories.set(page.id, container ? directory : parentDirectory)
+    if (container) {
+      const noteState = stateFor(`${page.trash ? '_trash/' : ''}${directory}`)
+      const noteKey = outputKey(`${stem}.md`)
+      noteState.stems.add(noteKey)
+      noteState.files.add(noteKey)
+    }
     for (const child of children.get(page.id) ?? []) {
-      const childDirectory = `${child.trash ? '_trash/' : ''}${directory}`
-      const childState = stateFor(childDirectory)
-      if (child.trash === page.trash) {
-        childState.stems.add(outputKey(`${stem}.md`))
-        childState.files.add(outputKey(`${stem}.md`))
-      }
       allocate(child)
     }
   }

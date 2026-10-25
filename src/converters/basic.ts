@@ -280,6 +280,9 @@ function renderTree(
         )
       }
       const current = renderBlock(block, depth)
+      if (current.length === 0) {
+        continue
+      }
       if (previous !== undefined) {
         markdown += previous.flavour === 'affine:list' && block.flavour === 'affine:list'
           ? '\n'
