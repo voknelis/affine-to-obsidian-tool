@@ -47,7 +47,7 @@ test("reserves report filenames case-insensitively with deterministic document-I
   assert.equal(registry.requirePath("report-b"), "_AFFINE-MIGRATION--report-b.md");
   assert.equal(registry.requirePath("report-json"), "_affine-migration.json.md");
   assert.equal(registry.requirePath("trash-report"), "_trash/_affine-migration.md");
-  assert.ok(![...registry.paths.values()].some((path) =>
+  assert.ok(!registry.pages.map((page) => page.outputPath).some((path) =>
     path.toLowerCase() === "_affine-migration.md" || path.toLowerCase() === "_affine-migration.json"
   ));
 });
@@ -131,7 +131,10 @@ test("registry paths and iteration order are independent of source page order", 
   const reversed = buildPageRegistry(workspace([...pages].reverse()));
 
   assert.deepEqual(forward.pages, reversed.pages);
-  assert.deepEqual([...forward.paths], [...reversed.paths]);
+  assert.deepEqual(
+    forward.pages.map((page) => [page.id, page.outputPath]),
+    reversed.pages.map((page) => [page.id, page.outputPath]),
+  );
   assert.deepEqual(forward.pages.map((entry) => entry.id), ["page-a", "page-b", "page-c"]);
 });
 

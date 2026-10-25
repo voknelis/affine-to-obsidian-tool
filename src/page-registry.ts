@@ -21,13 +21,11 @@ export class PageRegistryError extends Error {
 
 export class PageRegistry {
   readonly pages: readonly RegisteredPage[];
-  readonly paths: ReadonlyMap<string, string>;
   private readonly byId: ReadonlyMap<string, RegisteredPage>;
 
   constructor(pages: readonly RegisteredPage[]) {
     this.pages = pages;
     this.byId = new Map(pages.map((page) => [page.id, page]));
-    this.paths = new Map(pages.map((page) => [page.id, page.outputPath]));
   }
 
   get(documentId: string): RegisteredPage | undefined {
@@ -112,6 +110,7 @@ function allocateStem(
     candidateStem = appendSuffix(uniqueSuffix);
   }
   if (conflicts(candidateStem)) {
+    // eslint-disable-next-line no-control-regex -- ID sanitization intentionally replaces control characters.
     const id = page.id.replace(/[<>:"/\\|?*\u0000-\u001f\u007f-\u009f]/gu, "_");
     uniqueSuffix = `--${id}`;
     candidateStem = appendSuffix(uniqueSuffix);
@@ -257,10 +256,12 @@ export function buildPageRegistry(
       }
       return label;
     });
+    const outputPath = outputPaths.get(page.id);
+    if (outputPath === undefined) throw new PageRegistryError(`Missing output path for page ${page.id}.`);
     return {
       id: page.id,
       title: page.title,
-      outputPath: outputPaths.get(page.id)!,
+      outputPath,
       frontmatter: frontmatter(page, tags),
       tags,
       trash: page.trash,

@@ -31,7 +31,7 @@ function block(
 }
 
 function context(pages: PageRegistry, documentId = "doc"): BlockConversionContext {
-  return { documentId, pages, blocks: new Map(), losses: [] };
+  return { documentId, pages, blocks: new Map(), losses: [], allowMissingGroupChildren: [] };
 }
 
 function assets(...entries: AssetReference[]): AssetCollection {
@@ -90,19 +90,19 @@ test("uses sanitized attachment names and selects embeds only for Obsidian-suppo
 });
 
 test("renders the approved missing attachment as a warning callout without a broken link", () => {
-  const approved = "smjDCoUasPTP7xbGv6P71V5ZCmvIl5Q2AR-85qlSVEw=";
+  const approved = "approved-asset";
   const pages = registry(page("doc", "Document"));
   const attachment = block("affine:attachment", { "prop:sourceId": approved, "prop:name": "saved.html" });
 
   const markdown = convertMediaBlock(
     attachment,
-    context(pages, "opPyQsMhbrA-SL08aSBkz"),
+    context(pages, "document-id"),
     assets({ sourceId: approved, status: "missing" }),
   );
 
   assert.equal(markdown, [
     "> [!warning] Missing AFFiNE attachment",
-    "> Document: `opPyQsMhbrA-SL08aSBkz`",
+    "> Document: `document-id`",
     `> Source ID: \`${approved}\``,
   ].join("\n"));
   assert.ok(!markdown.includes("[["));
@@ -169,6 +169,18 @@ test("normalizes bookmark and YouTube URLs and keeps labels on one line", () => 
     convertMediaBlock(youtube, context(pages), assets()),
     "[Video caption](<https://www.youtube.com/watch?v=test>)",
   );
+});
+
+test("rejects executable and local bookmark and YouTube URL schemes", () => {
+  const pages = registry(page("doc", "Document"));
+  for (const url of ["javascript:alert(1)", "data:text/html,script", "file:///etc/passwd"]) {
+    for (const flavour of ["affine:bookmark", "affine:embed-youtube"]) {
+      assert.throws(
+        () => convertMediaBlock(block(flavour, { "prop:url": url }), context(pages), assets()),
+        /unsupported external URL scheme/iu,
+      );
+    }
+  }
 });
 
 test("converts linked documents through final active and trash registry paths", () => {

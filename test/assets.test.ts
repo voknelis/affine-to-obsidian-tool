@@ -7,6 +7,7 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 
 import {
+  AssetCollection,
   AssetError,
   extractAssets,
   extractSqliteAssets,
@@ -72,6 +73,14 @@ test("uses actual bytes for deterministic names and manifests and reads repeated
   assert.deepEqual(readFileSync(join(firstOutput, expectedPath)), Buffer.from(PNG));
   assert.deepEqual(readdirSync(join(firstOutput, "assets")), [expectedPath.slice("assets/".length)]);
   assert.deepEqual(readFileSync(join(secondOutput, expectedPath)), Buffer.from(PNG));
+});
+
+test("sorts manifest IDs by code units rather than locale collation", () => {
+  const collection = new AssetCollection([
+    { sourceId: "a", status: "missing" },
+    { sourceId: "Z", status: "missing" },
+  ]);
+  assert.deepEqual(collection.entries.map((entry) => entry.sourceId), ["Z", "a"]);
 });
 
 test("derives extensions from normalized MIME and validates every required signature", async (t) => {
@@ -179,7 +188,7 @@ test("writes long multibyte asset names without exceeding filename byte limits",
 
 test("allows only the explicitly approved absent blob and emits no asset file", async (t) => {
   const output = temporaryDirectory(t);
-  const approved = "smjDCoUasPTP7xbGv6P71V5ZCmvIl5Q2AR-85qlSVEw=";
+  const approved = "approved-asset";
 
   const result = await extractAssets([request(approved, "saved.html")], {
     outputDirectory: output,
@@ -194,7 +203,7 @@ test("allows only the explicitly approved absent blob and emits no asset file", 
 
 test("rejects additional missing, deleted, and zero-length blobs even when listed as allowed", async (t) => {
   const output = temporaryDirectory(t);
-  const approved = "smjDCoUasPTP7xbGv6P71V5ZCmvIl5Q2AR-85qlSVEw=";
+  const approved = "approved-asset";
   const cases: Array<{ id: string; blob?: AssetBlob; error: RegExp }> = [
     { id: "additional-missing", error: /additional-missing.*missing/i },
     { id: "deleted", blob: { data: PNG, mime: "image/png", deletedAt: "2026-01-01" }, error: /deleted.*deleted/i },
@@ -231,6 +240,15 @@ test("rejects signature mismatches instead of trusting MIME or names", async (t)
       assert.match(error.message, new RegExp(`${id}.*signature`, "i"));
       return true;
     });
+  }
+});
+
+test("rejects inherited object keys as MIME types", async (t) => {
+  for (const mime of ["constructor", "toString", "__proto__"]) {
+    await assert.rejects(extractAssets([request(mime, "asset.png")], {
+      outputDirectory: temporaryDirectory(t),
+      readBlob: reader({ [mime]: { data: PNG, mime } }),
+    }), /unsupported MIME type/iu);
   }
 });
 

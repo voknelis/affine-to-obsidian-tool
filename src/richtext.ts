@@ -1,5 +1,7 @@
 import type * as Y from "yjs";
 
+import { textDeltas } from "./converters/yjs.ts";
+
 import type { DocumentCoverageLedger } from "./coverage.ts";
 
 import {
@@ -119,11 +121,11 @@ export function renderRichText(
   const losses: RichTextLoss[] = [];
   const source = coverage?.richTextSource(text);
 
-  for (const [deltaIndex, delta] of text.toDelta().entries()) {
+  for (const [deltaIndex, delta] of textDeltas(text).entries()) {
     if (typeof delta.insert !== "string") {
       throw new Error("AFFiNE rich-text delta insert must be a string");
     }
-    const attributes = (delta.attributes ?? {}) as Attributes;
+    const attributes = delta.attributes ?? {};
     validateAttributes(attributes);
     const sourceText = delta.insert;
     const reference = linkedPage(attributes);

@@ -13,9 +13,10 @@ import {
   normalizeExternalUrl,
 } from "../markdown.ts";
 import { BlockConversionError, type AffineBlock, type BlockConversionContext } from "./types.ts";
+import { mapValue } from "./yjs.ts";
 
 function requiredString(block: AffineBlock, property: string): string {
-  const value = block.source.get(property);
+  const value = mapValue(block.source, property);
   if (typeof value !== "string" || value.length === 0) {
     throw new BlockConversionError(
       `AFFiNE block ${block.id} (${block.flavour}) property ${property} must be a non-empty string.`,
@@ -25,7 +26,7 @@ function requiredString(block: AffineBlock, property: string): string {
 }
 
 function optionalString(block: AffineBlock, property: string): string | undefined {
-  const value = block.source.get(property);
+  const value = mapValue(block.source, property);
   if (value === undefined || value === null) return undefined;
   if (typeof value !== "string") {
     throw new BlockConversionError(

@@ -17,10 +17,14 @@ export function escapeMarkdownInlineText(value: string): string {
   return escapeMarkdownText(value.replace(LINE_BREAK, " "));
 }
 
-/** Normalize an external AFFiNE URL without allowing relative destinations. */
+/** Normalize an external AFFiNE URL and reject executable or local schemes. */
 export function normalizeExternalUrl(value: string): string {
-  return /^[a-z][a-z0-9+.-]*:/iu.test(value) ? value
-    : value.startsWith("//") ? `https:${value}` : `https://${value}`;
+  const scheme = /^([a-z][a-z0-9+.-]*):/iu.exec(value)?.[1]?.toLowerCase();
+  if (scheme !== undefined) {
+    if (scheme === "http" || scheme === "https" || scheme === "mailto") return value;
+    throw new Error(`Unsupported external URL scheme "${scheme}".`);
+  }
+  return value.startsWith("//") ? `https:${value}` : `https://${value}`;
 }
 
 /** Render literal inline code with a delimiter longer than every embedded run. */

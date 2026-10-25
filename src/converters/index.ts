@@ -2,6 +2,7 @@ import * as Y from "yjs";
 
 import { AssetCollection } from "../assets.ts";
 import type { PageRegistry } from "../page-registry.ts";
+import type { MissingGroupChildException } from "../migration-policy.ts";
 import type { AffineDocument } from "../types.ts";
 import { convertBasicPage } from "./basic.ts";
 import { convertDatabaseBlock } from "./database.ts";
@@ -16,6 +17,7 @@ import type {
   ConvertCustomBlock,
   RenderBlockSequence,
 } from "./types.ts";
+import { mapValue } from "./yjs.ts";
 
 export type ConverterKind = "basic" | "media" | "database" | "edgeless";
 
@@ -43,6 +45,7 @@ export const CONVERTER_REGISTRY: ReadonlyMap<string, ConverterKind> = new Map(RE
 
 export interface ConvertPageOptions {
   readonly assets?: AssetCollection;
+  readonly allowMissingGroupChildren?: readonly MissingGroupChildException[];
 }
 
 function customBlockConverter(assets: AssetCollection): ConvertCustomBlock {
@@ -98,7 +101,7 @@ function customBlockConverter(assets: AssetCollection): ConvertCustomBlock {
 export function assertSupportedFlavours(document: AffineDocument): void {
   for (const value of document.doc.getMap<unknown>("blocks").values()) {
     if (!(value instanceof Y.Map)) continue;
-    const flavour = value.get("sys:flavour");
+    const flavour = mapValue(value, "sys:flavour");
     if (typeof flavour === "string" && !CONVERTER_REGISTRY.has(flavour)) {
       throw new BlockConversionError(`Unsupported AFFiNE block flavour "${flavour}" in document ${document.id}.`);
     }
@@ -112,11 +115,15 @@ export function convertPage(
   options: ConvertPageOptions = {},
 ): ConvertedPage {
   assertSupportedFlavours(document);
-  return convertBasicPage(document, pages, customBlockConverter(options.assets ?? new AssetCollection([])));
+  return convertBasicPage(
+    document,
+    pages,
+    customBlockConverter(options.assets ?? new AssetCollection([])),
+    options.allowMissingGroupChildren ?? [],
+  );
 }
 
 export { mediaAssetRequest } from "./media.ts";
-export { surfaceDiagramPath } from "./edgeless.ts";
 export type {
   AffineBlock,
   BlockConversionContext,

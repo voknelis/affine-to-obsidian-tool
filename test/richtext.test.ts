@@ -116,6 +116,15 @@ test("normalizes scheme-less AFFiNE external links to HTTPS", () => {
   assert.equal(result.markdown, "[jisho.org](<https://jisho.org>)");
 });
 
+test("rejects executable and local rich-text link schemes", () => {
+  for (const link of ["javascript:alert(1)", "data:text/html,script", "file:///etc/passwd"]) {
+    assert.throws(
+      () => renderRichText(richText({ text: "unsafe", attributes: { link } }), registry()),
+      /unsupported external URL scheme/iu,
+    );
+  }
+});
+
 test("renders overlapping marks around the same escaped delta", () => {
   const result = renderRichText(
     richText({

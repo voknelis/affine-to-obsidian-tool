@@ -128,7 +128,7 @@ test("loads a snapshot with zero updates", async (t) => {
   assert.ok(document);
   assert.equal(document.snapshotApplied, true);
   assert.equal(document.updateCount, 0);
-  assert.equal(document.doc.getText("content").toString(), "snapshot only");
+  assert.equal(document.doc.getText("content").toJSON(), "snapshot only");
 });
 
 test("applies nonzero updates by created_at and then rowid", async (t) => {
@@ -150,7 +150,7 @@ test("applies nonzero updates by created_at and then rowid", async (t) => {
   const loaded = workspace.documents.get("page-1");
   assert.ok(loaded);
   assert.equal(loaded.updateCount, 3);
-  assert.equal(loaded.doc.getText("content").toString(), "ABCD");
+  assert.equal(loaded.doc.getText("content").toJSON(), "ABCD");
 });
 
 test("rejects malformed snapshots and cleans temporary backup files", async (t) => {

@@ -2,6 +2,7 @@ import * as Y from "yjs";
 
 import { DocumentCoverageLedger, type CoverageDisposition } from "../coverage.ts";
 import { escapeMarkdownInlineText } from "../markdown.ts";
+import type { MissingGroupChildException } from "../migration-policy.ts";
 import type { PageRegistry } from "../page-registry.ts";
 import { shortDocumentId } from "../paths.ts";
 import { renderRichText } from "../richtext.ts";
@@ -15,6 +16,7 @@ import {
   type ConversionWarning,
   type DiagramAsset,
 } from "./types.ts";
+import { mapValue, textDeltas } from "./yjs.ts";
 
 const HEADING_TYPES: Record<string, true> = {
   h1: true, h2: true, h3: true, h4: true, h5: true, h6: true,
@@ -28,7 +30,7 @@ function isCodeFormatAttribute(attribute: string): attribute is CodeFormatAttrib
 }
 
 function requiredText(block: AffineBlock, property: string): Y.Text {
-  const value = block.source.get(property);
+  const value = mapValue(block.source, property);
   if (!(value instanceof Y.Text)) {
     throw new BlockConversionError(
       `AFFiNE block ${block.id} (${block.flavour}) property ${property} must be a Y.Text.`,
@@ -53,19 +55,19 @@ function decodeBlocks(document: AffineDocument): ReadonlyMap<string, AffineBlock
         `AFFiNE block ${key} in document ${document.id} must be a Y.Map.`,
       );
     }
-    const id = value.get("sys:id");
+    const id = mapValue(value, "sys:id");
     if (typeof id !== "string" || id.length === 0 || id !== key) {
       throw new BlockConversionError(
         `AFFiNE block ${key} in document ${document.id} has an invalid sys:id.`,
       );
     }
-    const flavour = value.get("sys:flavour");
+    const flavour = mapValue(value, "sys:flavour");
     if (typeof flavour !== "string" || flavour.length === 0) {
       throw new BlockConversionError(
         `AFFiNE block ${id} in document ${document.id} has an invalid sys:flavour.`,
       );
     }
-    const sourceChildren = value.get("sys:children");
+    const sourceChildren = mapValue(value, "sys:children");
     if (!(sourceChildren instanceof Y.Array)) {
       throw new BlockConversionError(
         `AFFiNE block ${id} in document ${document.id} property sys:children must be a Y.Array.`,
@@ -88,7 +90,7 @@ function renderCodeBlock(block: AffineBlock, context: BlockConversionContext): s
   if (block.children.length > 0) {
     throw new BlockConversionError(`AFFiNE code block ${block.id} cannot have children.`);
   }
-  const languageValue = block.source.get("prop:language");
+  const languageValue = mapValue(block.source, "prop:language");
   if (languageValue !== undefined && languageValue !== null && typeof languageValue !== "string") {
     throw new BlockConversionError(
       `AFFiNE code block ${block.id} property prop:language must be a string or null.`,
@@ -101,7 +103,8 @@ function renderCodeBlock(block: AffineBlock, context: BlockConversionContext): s
     );
   }
   const sourceText = requiredText(block, "prop:text");
-  const deltas = sourceText.toDelta() as Array<{ insert: unknown; attributes?: Record<string, unknown> }>;
+  const deltas = textDeltas(sourceText);
+  const inserts: string[] = [];
   const source = context.coverage?.richTextSource(sourceText);
   for (const [deltaIndex, delta] of deltas.entries()) {
     if (typeof delta.insert !== "string") {
@@ -109,6 +112,7 @@ function renderCodeBlock(block: AffineBlock, context: BlockConversionContext): s
         `AFFiNE code block ${block.id} delta insert must be a string.`,
       );
     }
+    inserts.push(delta.insert);
     const lostColors: Array<"color" | "background"> = [];
     const lostFormats: CodeFormatAttribute[] = [];
     for (const [attribute, value] of Object.entries(delta.attributes ?? {})) {
@@ -159,7 +163,7 @@ function renderCodeBlock(block: AffineBlock, context: BlockConversionContext): s
       reasons.length === 0 ? undefined : reasons.join(";"),
     );
   }
-  const code = deltas.map((delta) => delta.insert as string).join("").replace(/\r\n?/gu, "\n");
+  const code = inserts.join("").replace(/\r\n?/gu, "\n");
   const runs = code.match(/`+/gu) ?? [];
   const longestRun = runs.reduce((longest, run) => Math.max(longest, run.length), 0);
   const fence = "`".repeat(Math.max(3, longestRun + 1));
@@ -360,6 +364,7 @@ export function convertBasicPage(
   document: AffineDocument,
   pages: PageRegistry,
   convertCustomBlock: ConvertCustomBlock,
+  allowMissingGroupChildren: readonly MissingGroupChildException[] = [],
 ): ConvertedPage {
   const page = pages.require(document.id);
   const blocks = decodeBlocks(document);
@@ -370,6 +375,7 @@ export function convertBasicPage(
     blocks,
     losses: [],
     coverage,
+    allowMissingGroupChildren,
   };
   let root = blocks.get(document.id);
   if (root === undefined) {

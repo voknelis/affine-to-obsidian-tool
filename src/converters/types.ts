@@ -3,6 +3,7 @@ import type * as Y from "yjs";
 import type { CoverageDisposition, DocumentCoverage, DocumentCoverageLedger } from "../coverage.ts";
 import type { PageRegistry } from "../page-registry.ts";
 import type { RichTextLoss } from "../richtext.ts";
+import type { MissingGroupChildException } from "../migration-policy.ts";
 
 /** A validated AFFiNE block; source properties remain typed as unknown until consumed. */
 export interface AffineBlock {
@@ -19,6 +20,7 @@ export interface BlockConversionContext {
   readonly blocks: ReadonlyMap<string, AffineBlock>;
   readonly losses: RichTextLoss[];
   readonly coverage?: DocumentCoverageLedger;
+  readonly allowMissingGroupChildren: readonly MissingGroupChildException[];
 }
 export interface DiagramAsset {
   readonly path: string;

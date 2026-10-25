@@ -5,8 +5,8 @@ import {
   escapeWikilinkAlias,
   escapeWikilinkTarget,
 } from "../markdown.ts";
-import { APPROVED_MISSING_GROUP_CHILD } from "../migration-policy.ts";
-import { sanitizeFilename } from "../paths.ts";
+import { allowsMissingGroupChild } from "../migration-policy.ts";
+import { compareCodeUnits, sanitizeFilename } from "../paths.ts";
 import { renderRichText } from "../richtext.ts";
 import {
   BlockConversionError,
@@ -17,7 +17,7 @@ import {
   type DiagramAsset,
   type RenderBlockSequence,
 } from "./types.ts";
-import { record, type RecordValue } from "./yjs.ts";
+import { mapValue, record, textDeltas, type RecordValue } from "./yjs.ts";
 
 
 interface Point {
@@ -85,7 +85,7 @@ function geometry(value: unknown, block: AffineBlock, description = "geometry"):
 }
 
 function optionalGeometry(block: AffineBlock): Geometry | undefined {
-  const value = block.source.get("prop:xywh");
+  const value = mapValue(block.source, "prop:xywh");
   if (value === undefined || (typeof value === "string" && /^\[\s*0\s*,\s*0\s*,\s*0\s*,\s*0\s*\]$/u.test(value))) {
     return undefined;
   }
@@ -101,18 +101,18 @@ function indexOf(value: RecordValue): string {
 }
 
 function compareIndexed(left: { id: string; index: string }, right: { id: string; index: string }): number {
-  return left.index.localeCompare(right.index) || left.id.localeCompare(right.id);
+  return compareCodeUnits(left.index, right.index) || compareCodeUnits(left.id, right.id);
 }
 
 function blockIndex(block: AffineBlock): { id: string; index: string } {
-  const index = block.source.get("prop:index");
+  const index = mapValue(block.source, "prop:index");
   if (index !== undefined && typeof index !== "string") fail(block, "property prop:index must be a string.");
   return { id: block.id, index: index ?? "" };
 }
 
 function nativeElements(block: AffineBlock): NativeElement[] {
-  const rawWrapper = block.source.get("prop:elements");
-  const rawValues = rawWrapper instanceof Y.Map ? rawWrapper.get("value") : undefined;
+  const rawWrapper = mapValue(block.source, "prop:elements");
+  const rawValues = rawWrapper instanceof Y.Map ? mapValue(rawWrapper, "value") : undefined;
   const wrapper = record(rawWrapper);
   if (wrapper === undefined) fail(block, "property prop:elements must be a native value wrapper.");
   if (wrapper.type !== "$blocksuite:internal:native$") {
@@ -122,7 +122,7 @@ function nativeElements(block: AffineBlock): NativeElement[] {
   if (values === undefined) fail(block, "property prop:elements.value must be an object.");
   const elements = Object.entries(values).map(([key, raw]) => {
     const value = record(raw);
-    const source = rawValues instanceof Y.Map ? rawValues.get(key) : undefined;
+    const source = rawValues instanceof Y.Map ? mapValue(rawValues, key) : undefined;
     if (rawValues instanceof Y.Map && !(source instanceof Y.Map)) {
       fail(block, `native element ${key} must be a Y.Map.`);
     }
@@ -142,7 +142,7 @@ function nativeElements(block: AffineBlock): NativeElement[] {
 }
 
 function nativeProperty(element: NativeElement, property: string): unknown {
-  return element.source?.has(property) === true ? element.source.get(property) : element.value[property];
+  return element.source?.has(property) === true ? mapValue(element.source, property) : element.value[property];
 }
 
 function svgText(
@@ -155,24 +155,23 @@ function svgText(
   if (value === undefined) return "";
   if (typeof value === "string") return value;
   if (!(value instanceof Y.Text)) fail(block, `${description} must be a string or Y.Text.`);
-  const deltas = value.toDelta();
+  const deltas = textDeltas(value);
+  const inserts: string[] = [];
   for (const delta of deltas) {
     if (typeof delta.insert !== "string") fail(block, `${description} rich-text delta insert must be a string.`);
-    const attributes: unknown = delta.attributes;
-    if (attributes !== undefined && (typeof attributes !== "object" || attributes === null || Array.isArray(attributes))) {
-      fail(block, `${description} has invalid rich-text attributes.`);
-    }
-    if (attributes !== undefined && Object.keys(attributes).length > 0) {
+    inserts.push(delta.insert);
+    if (delta.attributes !== undefined && Object.keys(delta.attributes).length > 0) {
       fail(block, `${description} supports only plain text in SVG; rich-text attributes are not supported.`);
     }
   }
   if (account) {
     for (const [deltaIndex] of deltas.entries()) context.coverage?.recordRichTextDelta(value, deltaIndex, "rendered");
   }
-  return value.toString();
+  return inserts.join("");
 }
 
 function xml(value: string): string {
+  // eslint-disable-next-line no-control-regex -- XML sanitization intentionally rejects control characters.
   if (/[\u0000-\u0008\u000B\u000C\u000E-\u001F\uD800-\uDFFF\uFFFE\uFFFF]/u.test(value)) {
     throw new BlockConversionError("Cannot render an XML-invalid control character or unpaired surrogate in SVG.");
   }
@@ -196,7 +195,7 @@ function svgNumber(value: number): string {
 function color(value: unknown, fallback: string, block: AffineBlock, description: string): string {
   if (value === undefined || value === "") return fallback;
   if (typeof value === "string") {
-    const palette = PALETTE[value];
+    const palette = Object.hasOwn(PALETTE, value) ? PALETTE[value] : undefined;
     if (palette !== undefined) return palette;
     if (/^#(?:[0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})$/iu.test(value)
       || /^rgb\(\s*\d{1,3}(?:\.\d+)?%?\s*,\s*\d{1,3}(?:\.\d+)?%?\s*,\s*\d{1,3}(?:\.\d+)?%?\s*\)$/iu.test(value)
@@ -207,15 +206,15 @@ function color(value: unknown, fallback: string, block: AffineBlock, description
 
 function positiveProperty(value: RecordValue, key: string, fallback: number, block: AffineBlock): number {
   const raw = value[key];
-  const result = raw === undefined ? fallback : numberValue(raw, block, `element ${value.id} ${key}`);
-  if (result <= 0) fail(block, `element ${value.id} ${key} must be positive.`);
+  const result = raw === undefined ? fallback : numberValue(raw, block, `element ${String(value.id)} ${key}`);
+  if (result <= 0) fail(block, `element ${String(value.id)} ${key} must be positive.`);
   return result;
 }
 
 function nonnegativeProperty(value: RecordValue, key: string, fallback: number, block: AffineBlock): number {
   const raw = value[key];
-  const result = raw === undefined ? fallback : numberValue(raw, block, `element ${value.id} ${key}`);
-  if (result < 0) fail(block, `element ${value.id} ${key} must be nonnegative.`);
+  const result = raw === undefined ? fallback : numberValue(raw, block, `element ${String(value.id)} ${key}`);
+  if (result < 0) fail(block, `element ${String(value.id)} ${key} must be nonnegative.`);
   return result;
 }
 
@@ -350,7 +349,7 @@ function convertFrame(
   renderSequence: RenderBlockSequence,
 ): string {
   if (block.children.length > 0) fail(block, "frame sys:children must be empty; use prop:childElementIds.");
-  const sourceTitle = block.source.get("prop:title");
+  const sourceTitle = mapValue(block.source, "prop:title");
   let title: string;
   if (sourceTitle instanceof Y.Text) {
     const rendered = renderRichText(sourceTitle, context.pages, context.coverage);
@@ -368,16 +367,14 @@ function convertFrame(
       for (const element of nativeElements(candidate)) native.add(element.id);
     }
   }
-  const blockIds: string[] = [];
+  const indexedBlocks: Array<{ id: string; index: string }> = [];
   for (const id of ids) {
-    if (context.blocks.has(id)) blockIds.push(id);
+    const child = context.blocks.get(id);
+    if (child !== undefined) indexedBlocks.push(blockIndex(child));
     else if (!native.has(id)) fail(block, `frame child ${id} is missing.`);
   }
-  blockIds.sort((left, right) => {
-    const a = context.blocks.get(left);
-    const b = context.blocks.get(right);
-    return a === undefined || b === undefined ? left.localeCompare(right) : compareIndexed(blockIndex(a), blockIndex(b));
-  });
+  indexedBlocks.sort(compareIndexed);
+  const blockIds = indexedBlocks.map((child) => child.id);
   const contents = blockIds.length === 0 ? "" : renderSequence(blockIds, 0);
   return `## ${title}${contents.length === 0 ? "" : `\n\n${contents}`}`;
 }
@@ -409,10 +406,13 @@ function groupNativeElements(
     for (const [id, included] of Object.entries(children)) {
       if (included !== true) fail(block, `group ${element.id} child ${id} must be true.`);
       if (!byId.has(id) && !context.blocks.has(id)) {
-        const approved = context.documentId === APPROVED_MISSING_GROUP_CHILD.documentId
-          && block.id === APPROVED_MISSING_GROUP_CHILD.surfaceId
-          && element.id === APPROVED_MISSING_GROUP_CHILD.groupId
-          && id === APPROVED_MISSING_GROUP_CHILD.childId;
+        const approved = allowsMissingGroupChild(
+          context.allowMissingGroupChildren,
+          context.documentId,
+          block.id,
+          element.id,
+          id,
+        );
         if (!approved) fail(block, `group ${element.id} references missing child ${id}.`);
         warnings.push({
           kind: "edgeless-missing-group-child",
@@ -556,7 +556,7 @@ function renderNativeSvg(
     } else {
       const front = element.value.frontEndpointStyle ?? "None";
       const rear = element.value.rearEndpointStyle ?? "None";
-      if (!["None", "Arrow"].includes(String(front)) || !["None", "Arrow"].includes(String(rear))) {
+      if ((front !== "None" && front !== "Arrow") || (rear !== "None" && rear !== "Arrow")) {
         fail(block, `connector ${element.id} has an unsupported endpoint style.`);
       }
       output = `<path d="${connectorPaths.get(element.id)}" fill="none" stroke="${xml(color(element.value.stroke, "#000000", block, `connector ${element.id} stroke`))}" stroke-width="${svgNumber(positiveProperty(element.value, "strokeWidth", 1, block))}"${rear === "Arrow" ? " marker-end=\"url(#arrow)\"" : ""}${front === "Arrow" ? " marker-start=\"url(#arrow)\"" : ""}/>`;

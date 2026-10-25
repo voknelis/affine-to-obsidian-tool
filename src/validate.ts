@@ -8,12 +8,11 @@ import type { ConversionWarning } from "./converters/types.ts";
 import type { PageRegistry } from "./page-registry.ts";
 import {
   isCoverageDisposition,
-  type CoverageCounts,
   type CoverageDisposition,
-  type CoverageItem,
   type DocumentCoverage,
 } from "./coverage.ts";
-import { APPROVED_MISSING_GROUP_CHILD, REPORT_FILES } from "./migration-policy.ts";
+import { allowsMissingGroupChild, REPORT_FILES, type MissingGroupChildException } from "./migration-policy.ts";
+import { compareCodeUnits } from "./paths.ts";
 
 import {
   createMigrationReport,
@@ -31,6 +30,7 @@ export interface ValidateOutputOptions {
   readonly expectedNotes: ReadonlyMap<string, string>;
   readonly expectedDiagrams: ReadonlyMap<string, string>;
   readonly allowMissing?: Iterable<string>;
+  readonly allowMissingGroupChildren?: readonly MissingGroupChildException[];
   readonly warnings?: readonly ConversionWarning[];
   readonly conversionLosses?: readonly DocumentConversionLoss[];
   readonly missingAssetReferences?: readonly MissingAssetReference[];
@@ -51,7 +51,7 @@ export class OutputValidationError extends Error {
 
 async function outputFiles(root: string, directory = ""): Promise<string[]> {
   const entries = await readdir(join(root, directory), { withFileTypes: true });
-  entries.sort((left, right) => left.name.localeCompare(right.name));
+  entries.sort((left, right) => compareCodeUnits(left.name, right.name));
   const files: string[] = [];
   for (const entry of entries) {
     const relative = directory.length === 0 ? entry.name : `${directory}/${entry.name}`;
@@ -89,7 +89,7 @@ function validateCoverageCounts(coverage: DocumentCoverage): void {
   const blocks: MutableCoverageCounts = { total: 0, rendered: 0, structuralMetadataOnly: 0, approvedLoss: 0 };
   const richTextDeltas: MutableCoverageCounts = { total: 0, rendered: 0, structuralMetadataOnly: 0, approvedLoss: 0 };
   const identities = new Set<string>();
-  for (const item of coverage.items as readonly CoverageItem[]) {
+  for (const item of coverage.items) {
     const disposition = item.disposition;
     if (!isCoverageDisposition(disposition)) {
       throw new OutputValidationError(`Coverage for ${coverage.documentId} has an unknown disposition.`);
@@ -243,6 +243,7 @@ function validateWarnings(
   coverage: ReadonlyMap<string, DocumentCoverage>,
   missingIds: ReadonlySet<string>,
   allowMissing: ReadonlySet<string>,
+  allowMissingGroupChildren: readonly MissingGroupChildException[],
 ): void {
   for (const warning of warnings) {
     const kind: unknown = warning.kind;
@@ -269,10 +270,13 @@ function validateWarnings(
       throw new OutputValidationError(`Unapproved missing-asset warning "${warning.sourceId}".`);
     }
     if (warning.kind === "edgeless-missing-group-child"
-      && (warning.documentId !== APPROVED_MISSING_GROUP_CHILD.documentId
-        || warning.blockId !== APPROVED_MISSING_GROUP_CHILD.surfaceId
-        || warning.groupId !== APPROVED_MISSING_GROUP_CHILD.groupId
-        || warning.childId !== APPROVED_MISSING_GROUP_CHILD.childId)) {
+      && !allowsMissingGroupChild(
+        allowMissingGroupChildren,
+        warning.documentId,
+        warning.blockId,
+        warning.groupId,
+        warning.childId,
+      )) {
       throw new OutputValidationError("Unapproved edgeless-missing-group-child warning identity.");
     }
   }
@@ -301,7 +305,7 @@ function validateApprovedLosses(
   const usedBlockAuthorizations = new Set<string>();
   const expectedLosses = new Map<string, number>();
   for (const document of coverage.values()) {
-    for (const item of document.items as readonly CoverageItem[]) {
+    for (const item of document.items) {
       if (item.disposition !== "approved-loss") continue;
       if (item.kind === "block") {
         const missingPrefix = "Approved missing asset ";
@@ -500,7 +504,7 @@ export async function validateOutput(options: ValidateOutputOptions): Promise<Ou
     if (!allowMissing.has(sourceId)) throw new OutputValidationError(`Unapproved missing asset "${sourceId}".`);
   }
   const warnings = options.warnings ?? [];
-  validateWarnings(warnings, options.pages, coverage, missingIds, allowMissing);
+  validateWarnings(warnings, options.pages, coverage, missingIds, allowMissing, options.allowMissingGroupChildren ?? []);
   const conversionLosses = options.conversionLosses ?? [];
   validateApprovedLosses(coverage, warnings, conversionLosses, missingIds, options.missingAssetReferences ?? []);
 
@@ -548,7 +552,10 @@ export async function validateOutput(options: ValidateOutputOptions): Promise<Ou
       coverage: documentCoverage,
       losses: conversionLosses
         .filter((loss) => loss.documentId === documentCoverage.documentId)
-        .map(({ documentId: _documentId, ...loss }) => loss),
+        .map(({ documentId: _documentId, ...loss }) => {
+          void _documentId;
+          return loss;
+        }),
       warnings: warnings.filter((warning) => warning.documentId === documentCoverage.documentId),
     })),
   });

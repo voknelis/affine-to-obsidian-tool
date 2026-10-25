@@ -19,7 +19,7 @@ function capture() {
   };
 }
 
-async function cliFixture(root: string): Promise<string> {
+function cliFixture(root: string): string {
   const source = join(root, "storage.db");
   const doc = new Y.Doc({ guid: "page-1" });
   const blocks = doc.getMap<unknown>("blocks");
@@ -82,17 +82,18 @@ test("help exits successfully and documents options and default target", async (
 
   assert.equal(exitCode, 0);
   assert.equal(stderr.read(), "");
-  assert.match(stdout.read(), /Usage: affine-to-obsidian/);
+  assert.match(stdout.read(), /Usage: affine-to-obsidian-tool/);
   assert.match(stdout.read(), /--source <path>/);
   assert.match(stdout.read(), /--target <path>/);
   assert.match(stdout.read(), /--allow-missing <source-id>/);
+  assert.match(stdout.read(), /--allow-missing-group-child <documentId:surfaceId:groupId:childId>/);
   assert.match(stdout.read(), /--dry-run/);
   assert.match(stdout.read(), /default: .*from_affine/);
 });
 
 test("CLI migrates a synthetic workspace with explicit source, target and allow-missing", async (t) => {
   const root = await sandbox(t);
-  const source = await cliFixture(root);
+  const source = cliFixture(root);
   const target = join(root, "from_affine");
   const stdout = capture();
   const stderr = capture();
@@ -116,7 +117,7 @@ test("CLI migrates a synthetic workspace with explicit source, target and allow-
 
 test("CLI dry-run validates and reports without creating or changing the target", async (t) => {
   const root = await sandbox(t);
-  const source = await cliFixture(root);
+  const source = cliFixture(root);
   const target = join(root, "from_affine");
   await mkdir(target);
   await writeFile(join(target, "keep.txt"), "unchanged");
@@ -191,6 +192,6 @@ test("the executable entry point returns the documented help status", () => {
   });
 
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /Usage: affine-to-obsidian/);
+  assert.match(result.stdout, /Usage: affine-to-obsidian-tool/);
   assert.equal(result.stderr, "");
 });

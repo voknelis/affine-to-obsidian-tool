@@ -2,6 +2,7 @@ import { homedir } from "node:os";
 import { resolve } from "node:path";
 
 import { targetPathError } from "./path-guard.ts";
+import type { MissingGroupChildException } from "./migration-policy.ts";
 
 export type CliArguments =
   | { help: true }
@@ -10,6 +11,7 @@ export type CliArguments =
       source: string;
       target: string;
       allowMissing: string[];
+      allowMissingGroupChildren: MissingGroupChildException[];
       dryRun: boolean;
     };
 
@@ -48,6 +50,20 @@ function validateTarget(source: string, target: string, cwd: string): void {
   if (error !== undefined) throw new CliUsageError(error);
 }
 
+function missingGroupChildException(value: string): MissingGroupChildException {
+  const parts = value.split(":");
+  if (parts.length !== 4 || parts.some((part) => part.length === 0)) {
+    throw new CliUsageError(
+      "--allow-missing-group-child requires <documentId:surfaceId:groupId:childId> with non-empty IDs.",
+    );
+  }
+  const [documentId, surfaceId, groupId, childId] = parts;
+  if (documentId === undefined || surfaceId === undefined || groupId === undefined || childId === undefined) {
+    throw new CliUsageError("--allow-missing-group-child requires four IDs.");
+  }
+  return { documentId, surfaceId, groupId, childId };
+}
+
 export function parseArgs(
   args: readonly string[],
   cwd: string = process.cwd(),
@@ -55,6 +71,7 @@ export function parseArgs(
   let source: string | undefined;
   let target: string | undefined;
   const allowMissing: string[] = [];
+  const allowMissingGroupChildren: MissingGroupChildException[] = [];
 
   let dryRun = false;
   for (let index = 0; index < args.length; index += 1) {
@@ -81,6 +98,11 @@ export function parseArgs(
       const result = optionValue(args, index, "--allow-missing");
       allowMissing.push(result.value);
       index = result.nextIndex;
+    } else if (argument === "--allow-missing-group-child"
+      || argument?.startsWith("--allow-missing-group-child=")) {
+      const result = optionValue(args, index, "--allow-missing-group-child");
+      allowMissingGroupChildren.push(missingGroupChildException(result.value));
+      index = result.nextIndex;
     } else {
       throw new CliUsageError(`Unknown argument: ${argument ?? ""}`);
     }
@@ -99,6 +121,7 @@ export function parseArgs(
     source: resolvedSource,
     target: resolvedTarget,
     allowMissing,
+    allowMissingGroupChildren,
     dryRun,
   };
 }

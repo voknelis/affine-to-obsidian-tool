@@ -87,10 +87,10 @@ function canvasText(id: string, text: string, index: string, xywh = "[0,0,200,40
 }
 
 const APPROVED_MISSING_GROUP_CHILD = {
-  documentId: "dB5sNQ3f3-c_vNtdplWud",
-  surfaceId: "Vw_-iiHU40c_LXYZBlBhC",
-  groupId: "laVEftUZ5b",
-  childId: "47g7sBvNVTS0tJaSnY3n2",
+  documentId: "document-id",
+  surfaceId: "surface-id",
+  groupId: "group-id",
+  childId: "child-id",
 } as const;
 
 function staleGroupFixture(overrides: { [K in keyof typeof APPROVED_MISSING_GROUP_CHILD]?: string } = {}) {
@@ -381,6 +381,23 @@ test("rejects invalid geometry, missing targets, and unknown native element type
   assert.throws(() => convertPage(missingReference, pages()), /reference.*absent|absent.*reference/iu);
 });
 
+test("rejects inherited object keys as palette colors", () => {
+  for (const color of ["constructor", "toString", "__proto__"]) {
+    assert.throws(() => convertPage(surfaceDocument({
+      item: { id: "item", type: "shape", shapeType: "rect", xywh: "[0,0,100,40]", fillColor: color },
+    }), pages()), /fillColor.*unsupported.*color/iu);
+  }
+});
+
+test("sorts edgeless indices by code units rather than locale collation", () => {
+  const result = convertPage(surfaceDocument({
+    lower: { id: "lower", type: "text", index: "a", xywh: "[0,50,100,40]", text: "Lower" },
+    upper: { id: "upper", type: "text", index: "Z", xywh: "[0,0,100,40]", text: "Upper" },
+  }), pages());
+  const svg = result.diagrams[0]?.contents ?? "";
+  assert.ok(svg.indexOf(">Upper<") < svg.indexOf(">Lower<"));
+});
+
 test("rejects unsupported nonempty edgeless colors instead of substituting black or white", () => {
   const cases: Array<{ element: Record<string, unknown>; property: string }> = [
     {
@@ -457,9 +474,10 @@ test("rejects group cycles and unsafe references", () => {
   assert.throws(() => convertPage(wrongTarget, pages()), /refFlavour|target.*flavour/iu);
 });
 
-test("accepts only the approved stale native group child tuple", () => {
+test("accepts a stale native group child only when its exact tuple is allowed", () => {
   const { document, registry, ids } = staleGroupFixture();
-  const result = convertPage(document, registry);
+  assert.throws(() => convertPage(document, registry), /group.*missing child/iu);
+  const result = convertPage(document, registry, { allowMissingGroupChildren: [ids] });
   assert.deepEqual(result.warnings, [{
     kind: "edgeless-missing-group-child",
     documentId: ids.documentId,
@@ -472,22 +490,22 @@ test("accepts only the approved stale native group child tuple", () => {
 
 test("rejects a stale group child with a different document ID", () => {
   const { document, registry } = staleGroupFixture({ documentId: "different-document" });
-  assert.throws(() => convertPage(document, registry), /group.*missing child/iu);
+  assert.throws(() => convertPage(document, registry, { allowMissingGroupChildren: [APPROVED_MISSING_GROUP_CHILD] }), /group.*missing child/iu);
 });
 
 test("rejects a stale group child with a different surface ID", () => {
   const { document, registry } = staleGroupFixture({ surfaceId: "different-surface" });
-  assert.throws(() => convertPage(document, registry), /group.*missing child/iu);
+  assert.throws(() => convertPage(document, registry, { allowMissingGroupChildren: [APPROVED_MISSING_GROUP_CHILD] }), /group.*missing child/iu);
 });
 
 test("rejects a stale group child with a different group ID", () => {
   const { document, registry } = staleGroupFixture({ groupId: "different-group" });
-  assert.throws(() => convertPage(document, registry), /group.*missing child/iu);
+  assert.throws(() => convertPage(document, registry, { allowMissingGroupChildren: [APPROVED_MISSING_GROUP_CHILD] }), /group.*missing child/iu);
 });
 
 test("rejects a stale group child with a different child ID", () => {
   const { document, registry } = staleGroupFixture({ childId: "different-child" });
-  assert.throws(() => convertPage(document, registry), /group.*missing child/iu);
+  assert.throws(() => convertPage(document, registry, { allowMissingGroupChildren: [APPROVED_MISSING_GROUP_CHILD] }), /group.*missing child/iu);
 });
 
 test("rejects rich-text attributes and non-string deltas in native SVG text", () => {
@@ -515,7 +533,7 @@ test("rejects unsupported native text property value types", () => {
   for (const value of [null, false, 42, { text: "nested" }]) {
     assert.throws(() => convertPage(surfaceDocument({
       label: { id: "label", type: "text", xywh: "[0,0,200,40]", text: value },
-    }), pages()), /text.*must be a string or Y.Text/iu, String(value));
+    }), pages()), /text.*must be a string or Y.Text/iu, JSON.stringify(value));
   }
 });
 

@@ -1,5 +1,7 @@
 import * as Y from "yjs";
 
+import { textDeltas } from "./converters/yjs.ts";
+
 export const COVERAGE_DISPOSITIONS = ["rendered", "structural/metadata-only", "approved-loss"] as const;
 export type CoverageDisposition = (typeof COVERAGE_DISPOSITIONS)[number];
 
@@ -99,7 +101,7 @@ export class DocumentCoverageLedger {
       if (this.textSources.has(value)) {
         throw new CoverageError(`Rich text at ${blockId}:${path} is shared by multiple source properties.`);
       }
-      const source = { blockId, property: path, deltaCount: value.toDelta().length };
+      const source = { blockId, property: path, deltaCount: textDeltas(value).length };
       const identity = `${blockId}\0${path}`;
       if (this.textIdentities.has(identity)) {
         throw new CoverageError(`Duplicate rich-text source identity "${blockId}:${path}" in document ${this.documentId}.`);

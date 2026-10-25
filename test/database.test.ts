@@ -121,7 +121,7 @@ function fixture(spec: DatabaseSpec): {
   });
   return {
     block,
-    context: { documentId: "doc", pages, blocks, losses: [] },
+    context: { documentId: "doc", pages, blocks, losses: [], allowMissingGroupChildren: [] },
     doc,
     sourceBlocks,
   };
@@ -212,7 +212,7 @@ test("renders formatted child titles and respects table view column order and vi
 
   const result = convertDatabaseBlock(block, context);
   assert.match(result.markdown, /\| Notes \| Name \|\n\| --- \| --- \|\n\| Visible \| \*\*Bold\*\* \|/u);
-  assert.match(result.markdown, /#### All data\n\n\| Score \| Status \| Tags \|\n\| --- \| --- \| --- \|\n\| 7 \|  \|  \|/u);
+  assert.match(result.markdown, /#### All data\n\n\| Score \| Status \| Tags \|\n\| --- \| --- \| --- \|\n\| 7 \| {2}\| {2}\|/u);
 });
 
 test("renders rich-text database titles and omits empty rich-text titles", () => {
@@ -415,9 +415,9 @@ test("preserves table values and kanban groups across multiple views", () => {
     },
   });
 
-  assert.match(result.markdown, /#### Table View[\s\S]*\| Alpha \| Doing \|\n\| Beta \| Doing \|\n\| No status \|  \|/u);
+  assert.match(result.markdown, /#### Table View[\s\S]*\| Alpha \| Doing \|\n\| Beta \| Doing \|\n\| No status \| {2}\|/u);
   assert.match(result.markdown, /#### Kanban View\n\n##### Doing\n\n\| Name \| Status \|[\s\S]*\| Alpha \| Doing \|\n\| Beta \| Doing \|/u);
-  assert.match(result.markdown, /##### Ungrouped\n\n\| Name \| Status \|[\s\S]*\| No status \|  \|/u);
+  assert.match(result.markdown, /##### Ungrouped\n\n\| Name \| Status \|[\s\S]*\| No status \| {2}\|/u);
 });
 
 test("emits configured empty kanban lanes with tables, including an empty database", () => {
@@ -499,7 +499,7 @@ test("renders missing cells, values and empty option lists as empty values", () 
       },
     },
   });
-  assert.match(result.markdown, /\| Alpha \|  \|  \|  \|\n\| Beta \|  \|  \|  \|/u);
+  assert.match(result.markdown, /\| Alpha \| {2}\| {2}\| {2}\|\n\| Beta \| {2}\| {2}\| {2}\|/u);
 });
 
 test("uses a stable fallback for a title column without a name", () => {
@@ -583,7 +583,7 @@ test("reports filters and nonrepresentable view settings as structured warnings 
     cells: { "row-1": { score: { columnId: "score", value: 1 } } },
   });
 
-  assert.match(result.markdown, /\| First \|  \| 1 \|  \|  \|/u);
+  assert.match(result.markdown, /\| First \| {2}\| 1 \| {2}\| {2}\|/u);
   assert.deepEqual(result.warnings, [
     {
       kind: "database-view-filter",
@@ -623,7 +623,7 @@ test("warns explicitly when a table view carries groupBy metadata", () => {
     cells: { "row-1": { status: { columnId: "status", value: "doing" } } },
   });
 
-  assert.match(result.markdown, /\| First \|  \|  \| Doing \|  \|/u);
+  assert.match(result.markdown, /\| First \| {2}\| {2}\| Doing \| {2}\|/u);
   assert.deepEqual(result.warnings, [{
     kind: "database-view-setting",
     documentId: "doc",

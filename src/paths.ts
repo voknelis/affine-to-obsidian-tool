@@ -1,8 +1,14 @@
+// eslint-disable-next-line no-control-regex -- Filename sanitization intentionally removes control characters.
 const WINDOWS_FORBIDDEN = /[<>:"/\\|?*\u0000-\u001f\u007f-\u009f]/gu;
 const TRAILING_DOTS_AND_SPACES = /[. ]+$/u;
 const RESERVED_WINDOWS_NAME = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/iu;
 
 const MAX_FILENAME_BYTES = 255;
+
+/** Compare UTF-16 code units without host locale or collation settings. */
+export function compareCodeUnits(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
 
 function truncateUtf8(value: string, maximumBytes: number): string {
   const bytes = Buffer.from(value, "utf8");

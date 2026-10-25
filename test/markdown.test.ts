@@ -43,6 +43,19 @@ test("normalizes inline labels and external URL schemes", () => {
   assert.equal(normalizeExternalUrl("example.com/docs"), "https://example.com/docs");
   assert.equal(normalizeExternalUrl("//example.com/docs"), "https://example.com/docs");
   assert.equal(normalizeExternalUrl("mailto:user@example.com"), "mailto:user@example.com");
+  assert.equal(normalizeExternalUrl("http://example.com"), "http://example.com");
+  assert.equal(normalizeExternalUrl("HTTPS://example.com"), "HTTPS://example.com");
+});
+
+test("rejects unsafe and unsupported external URL schemes", () => {
+  for (const url of [
+    "javascript:alert(1)",
+    "DATA:text/html,script",
+    "file:///etc/passwd",
+    "ftp://example.com/file",
+  ]) {
+    assert.throws(() => normalizeExternalUrl(url), /unsupported external URL scheme/iu);
+  }
 });
 
 test("uses safe code-span delimiters and renders embedded newlines as spaces", () => {

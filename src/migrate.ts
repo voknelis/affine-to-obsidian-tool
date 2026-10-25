@@ -23,7 +23,8 @@ import {
   mediaAssetRequest,
 } from "./converters/index.ts";
 import type { DiagramAsset } from "./converters/types.ts";
-import { REPORT_FILES } from "./migration-policy.ts";
+import { mapValue } from "./converters/yjs.ts";
+import { REPORT_FILES, type MissingGroupChildException } from "./migration-policy.ts";
 import { inferPageParents } from "./page-hierarchy.ts";
 import { buildPageRegistry } from "./page-registry.ts";
 import { targetPathError } from "./path-guard.ts";
@@ -39,6 +40,7 @@ import {
 export interface MigrateWorkspaceOptions {
   readonly source: string;
   readonly target: string;
+  readonly allowMissingGroupChildren?: Iterable<MissingGroupChildException>;
   readonly allowMissing?: Iterable<string>;
   readonly dryRun: boolean;
 }
@@ -122,15 +124,15 @@ function collectAssetRequests(workspace: LoadedAffineWorkspace, pageIds: readonl
     assertSupportedFlavours(document);
     for (const [key, value] of document.doc.getMap<unknown>("blocks").entries()) {
       if (!(value instanceof Y.Map)) continue;
-      const flavour = value.get("sys:flavour");
+      const flavour = mapValue(value, "sys:flavour");
       if (typeof flavour === "string" && !CONVERTER_REGISTRY.has(flavour)) {
         throw new BlockConversionError(
           `Unsupported AFFiNE block flavour "${flavour}" in document ${pageId}.`,
         );
       }
       if (flavour !== "affine:image" && flavour !== "affine:attachment") continue;
-      const id = value.get("sys:id");
-      const children = value.get("sys:children");
+      const id = mapValue(value, "sys:id");
+      const children = mapValue(value, "sys:children");
       if (typeof id !== "string" || id !== key || !(children instanceof Y.Array)) continue;
       requests.push({
         ...mediaAssetRequest({
@@ -197,6 +199,7 @@ export async function migrateWorkspace(
   hooks: MigrateWorkspaceHooks = {},
 ): Promise<MigrationResult> {
   const source = resolve(options.source);
+  const allowMissingGroupChildren = [...options.allowMissingGroupChildren ?? []];
   const target = resolve(options.target);
   await guardTarget(source, target);
 
@@ -236,7 +239,7 @@ export async function migrateWorkspace(
     }
 
     for (const page of pages.pages) {
-      const converted = convertPage(requireDocument(workspace, page.id), pages, { assets });
+      const converted = convertPage(requireDocument(workspace, page.id), pages, { assets, allowMissingGroupChildren });
       await writeConvertedFile(staging, page.outputPath, converted.markdown);
       expectedNotes.set(page.id, converted.markdown);
       outputPaths.push(page.outputPath);
@@ -272,6 +275,7 @@ export async function migrateWorkspace(
       conversionLosses: documents.flatMap((document) =>
         document.losses.map((loss) => ({ documentId: document.documentId, ...loss }))),
       expectedDiagrams: new Map(diagrams.map((diagram) => [diagram.path, diagram.contents])),
+      allowMissingGroupChildren,
       allowMissing: options.allowMissing ?? [],
       warnings: documents.flatMap((document) => document.warnings),
       missingAssetReferences,

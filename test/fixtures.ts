@@ -70,7 +70,7 @@ function setJsonValue(target: Y.Map<unknown>, key: string, value: unknown): void
       if (item !== null && typeof item === "object") {
         const child = new Y.Map<unknown>();
         array.push([child]);
-        for (const [childKey, childValue] of Object.entries(item)) {
+        for (const [childKey, childValue] of Object.entries(item as Record<string, unknown>)) {
           setJsonValue(child, childKey, childValue);
         }
       } else {

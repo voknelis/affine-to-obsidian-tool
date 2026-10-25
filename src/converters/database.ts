@@ -8,8 +8,7 @@ import {
   type BlockConversionContext,
   type DatabaseConversionWarning,
 } from "./types.ts";
-import { decoded, record, type RecordValue } from "./yjs.ts";
-export type { DatabaseConversionWarning } from "./types.ts";
+import { decoded, mapValue, record, type RecordValue } from "./yjs.ts";
 
 const SUPPORTED_COLUMN_TYPES: Record<string, true> = {
   title: true, "rich-text": true, number: true, select: true, "multi-select": true,
@@ -345,13 +344,13 @@ function parseRows(
     if (child === undefined) {
       throw new BlockConversionError(`Missing database row ${rowId} referenced by block ${block.id}.`);
     }
-    if (child.flavour !== "affine:paragraph" || child.source.get("prop:type") !== "text") {
+    if (child.flavour !== "affine:paragraph" || mapValue(child.source, "prop:type") !== "text") {
       throw new BlockConversionError(`AFFiNE database row ${rowId} must be a text paragraph.`);
     }
     if (child.children.length > 0) {
       throw new BlockConversionError(`AFFiNE database row ${rowId} cannot have children.`);
     }
-    const title = child.source.get("prop:text");
+    const title = mapValue(child.source, "prop:text");
     if (!(title instanceof Y.Text)) {
       throw new BlockConversionError(`AFFiNE database row ${rowId} prop:text must be Y.Text.`);
     }
@@ -369,7 +368,7 @@ function parseRows(
       }
     }
 
-    const sourceRowCells = cellsValue instanceof Y.Map ? cellsValue.get(rowId) : undefined;
+    const sourceRowCells = cellsValue instanceof Y.Map ? mapValue(cellsValue, rowId) : undefined;
 
     const values = new Map<string, string>();
     for (const column of columns) {
@@ -384,8 +383,8 @@ function parseRows(
       if (cell !== undefined && cell.columnId !== column.id) {
         throw new BlockConversionError(`AFFiNE database row ${rowId} cell ${column.id} has mismatched columnId.`);
       }
-      const sourceCell = sourceRowCells instanceof Y.Map ? sourceRowCells.get(column.id) : undefined;
-      const sourceValue = sourceCell instanceof Y.Map ? sourceCell.get("value") : cell?.value;
+      const sourceCell = sourceRowCells instanceof Y.Map ? mapValue(sourceRowCells, column.id) : undefined;
+      const sourceValue = sourceCell instanceof Y.Map ? mapValue(sourceCell, "value") : cell?.value;
       values.set(column.id, cellText(sourceValue, column, block, context));
     }
     return { id: rowId, title: renderedTitle.markdown, values };

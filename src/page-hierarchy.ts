@@ -1,5 +1,8 @@
 import * as Y from "yjs";
 
+import { compareCodeUnits } from "./paths.ts";
+import { mapValue, textDeltas } from "./converters/yjs.ts";
+
 import type { AffineDocument, LoadedAffineWorkspace } from "./types.ts";
 
 export class PageHierarchyError extends Error {
@@ -36,7 +39,7 @@ function createsCycle(
 
 function collectLinkedPages(value: unknown, visit: (pageId: string) => void): void {
   if (value instanceof Y.Text) {
-    for (const delta of value.toDelta()) {
+    for (const delta of textDeltas(value)) {
       const reference = delta.attributes?.reference;
       if (
         typeof reference === "object" && reference !== null &&
@@ -80,8 +83,8 @@ export function inferPageParents(workspace: LoadedAffineWorkspace): ReadonlyMap<
     }
     for (const block of document.doc.getMap<unknown>("blocks").values()) {
       if (!(block instanceof Y.Map)) continue;
-      if (block.get("sys:flavour") === "affine:embed-linked-doc") {
-        const target = block.get("prop:pageId");
+      if (mapValue(block, "sys:flavour") === "affine:embed-linked-doc") {
+        const target = mapValue(block, "prop:pageId");
         if (typeof target === "string") addCandidate(page.id, target);
       }
       collectLinkedPages(block, (targetId) => addCandidate(page.id, targetId));
@@ -92,7 +95,7 @@ export function inferPageParents(workspace: LoadedAffineWorkspace): ReadonlyMap<
   for (const page of workspace.metadata.pages) {
     const sources = [...(candidates.get(page.id) ?? [])].sort((left, right) => {
       const difference = (order.get(left) ?? -1) - (order.get(right) ?? -1);
-      return difference !== 0 ? difference : left.localeCompare(right);
+      return difference !== 0 ? difference : compareCodeUnits(left, right);
     });
     for (const sourceId of sources) {
       if (!createsCycle(page.id, sourceId, candidates)) {

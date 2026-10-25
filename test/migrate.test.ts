@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { mkdtemp, mkdir, readFile, readdir, rename, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test, { type TestContext } from "node:test";
 import * as Y from "yjs";
@@ -69,7 +69,7 @@ interface FixtureOptions {
   readonly diagram?: boolean;
 }
 
-async function fixture(root: string, options: FixtureOptions = {}): Promise<string> {
+function fixture(root: string, options: FixtureOptions = {}): Promise<string> {
   const source = join(root, "storage.db");
   const assetState = options.assetState ?? "available";
   const assetId = assetState === "missing" ? "approved-missing" : "image-source";
@@ -147,7 +147,7 @@ async function fixture(root: string, options: FixtureOptions = {}): Promise<stri
   } finally {
     database.close();
   }
-  return source;
+  return Promise.resolve(source);
 }
 
 async function sandbox(t: TestContext): Promise<string> {
@@ -399,7 +399,7 @@ for (const failureCase of [
   },
   {
     name: "nonexistent source",
-    prepare: async (_root: string) => {},
+    prepare: () => Promise.resolve(),
     error: /consistent read-only SQLite backup/iu,
   },
   {

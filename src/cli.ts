@@ -4,12 +4,14 @@ import { pathToFileURL } from "node:url";
 import { CliUsageError, parseArgs } from "./args.ts";
 import { migrateWorkspace } from "./migrate.ts";
 
-const HELP = `Usage: affine-to-obsidian --source <path> [options]
+const HELP = `Usage: affine-to-obsidian-tool --source <path> [options]
 
 Options:
   --source <path>                 AFFiNE workspace SQLite database (required)
   --target <path>                 Output directory (default: from_affine)
   --allow-missing <source-id>     Allow a missing asset; repeatable
+  --allow-missing-group-child <documentId:surfaceId:groupId:childId>
+                                Allow one stale edgeless group child; repeatable
   --dry-run                       Convert, stage, validate and report without replacing target
   -h, --help                      Show this help
 `;
@@ -43,7 +45,7 @@ export async function runCli(
     const message = error instanceof Error ? error.message : String(error);
     io.stderr.write(`Error: ${message}\n`);
     if (error instanceof CliUsageError) {
-      io.stderr.write("Try 'affine-to-obsidian --help' for usage.\n");
+      io.stderr.write("Try 'affine-to-obsidian-tool --help' for usage.\n");
     }
     return 1;
   }

@@ -15,6 +15,7 @@ test("parses absolute source and target paths", () => {
       source: "/data/storage.db",
       target: "/output",
       allowMissing: [],
+      allowMissingGroupChildren: [],
       dryRun: false,
     },
   );
@@ -26,6 +27,7 @@ test("resolves relative paths and defaults target to from_affine", () => {
     source: resolve(cwd, "data/storage.db"),
     target: resolve(cwd, "from_affine"),
     allowMissing: [],
+    allowMissingGroupChildren: [],
     dryRun: false,
   });
 });
@@ -47,8 +49,30 @@ test("collects repeatable allow-missing values in order", () => {
     source: resolve(cwd, "storage.db"),
     target: resolve(cwd, "result"),
     allowMissing: ["first-id", "second-id"],
+    allowMissingGroupChildren: [],
     dryRun: false,
   });
+});
+
+test("parses repeatable structured missing-group-child exceptions", () => {
+  const result = parseArgs([
+    "--source", "storage.db",
+    "--allow-missing-group-child", "document:surface:group:child",
+    "--allow-missing-group-child=document-2:surface-2:group-2:child-2",
+  ], cwd);
+  assert.deepEqual(result.help === false ? result.allowMissingGroupChildren : [], [
+    { documentId: "document", surfaceId: "surface", groupId: "group", childId: "child" },
+    { documentId: "document-2", surfaceId: "surface-2", groupId: "group-2", childId: "child-2" },
+  ]);
+});
+
+test("rejects malformed missing-group-child exceptions", () => {
+  for (const value of ["", "a:b:c", "a:b:c:d:e", "a::c:d", ":b:c:d", "a:b:c:"]) {
+    assert.throws(
+      () => parseArgs(["--source", "storage.db", `--allow-missing-group-child=${value}`], cwd),
+      /allow-missing-group-child.*four|allow-missing-group-child.*non-empty|requires a value/iu,
+    );
+  }
 });
 
 test("parses the explicit dry-run flag", () => {
@@ -57,6 +81,7 @@ test("parses the explicit dry-run flag", () => {
     source: resolve(cwd, "storage.db"),
     target: resolve(cwd, "from_affine"),
     allowMissing: [],
+    allowMissingGroupChildren: [],
     dryRun: true,
   });
 });

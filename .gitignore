@@ -3,6 +3,8 @@
 .gitlet/
 dist/
 node_modules/
+/from_affine/
+/.from_affine-migration-*/
 
 .DS_Store
 .env.*

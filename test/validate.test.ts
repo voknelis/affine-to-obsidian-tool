@@ -117,7 +117,10 @@ async function writeReports(options: ValidateOutputOptions): Promise<void> {
       coverage: documentCoverage,
       losses: conversionLosses
         .filter((loss) => loss.documentId === documentCoverage.documentId)
-        .map(({ documentId: _documentId, ...loss }) => loss),
+        .map(({ documentId: _documentId, ...loss }) => {
+          void _documentId;
+          return loss;
+        }),
       warnings: (options.warnings ?? []).filter((warning) => warning.documentId === documentCoverage.documentId),
     })),
   });
@@ -541,15 +544,16 @@ test("rich-text approved losses reconcile exactly with structured conversion los
     /conversion losses.*reconcile/iu,
   );
   const { blockId: _blockId, ...missingIdentity } = loss;
+  void _blockId;
   await assert.rejects(
     validateOutput({ ...authorized, conversionLosses: [missingIdentity] }),
     /missing.*source identity/iu,
   );
 });
 
-test("only the exact approved missing native group child tuple is accepted", async (t) => {
+test("accepts only explicitly allowed missing native group child tuples", async (t) => {
   const base = await validOptions(t);
-  const documentId = "dB5sNQ3f3-c_vNtdplWud";
+  const documentId = "document-id";
   const registry = buildPageRegistry({
     pages: [
       { id: documentId, title: "Doc", tags: [], trash: false },
@@ -564,9 +568,9 @@ test("only the exact approved missing native group child tuple is accepted", asy
   const warning: ConversionWarning = {
     kind: "edgeless-missing-group-child",
     documentId,
-    blockId: "Vw_-iiHU40c_LXYZBlBhC",
-    groupId: "laVEftUZ5b",
-    childId: "47g7sBvNVTS0tJaSnY3n2",
+    blockId: "surface-id",
+    groupId: "group-id",
+    childId: "child-id",
     reason: "Approved stale native reference",
   };
   const options: ValidateOutputOptions = {
@@ -575,12 +579,22 @@ test("only the exact approved missing native group child tuple is accepted", asy
     coverage: [coverage(documentId, [warning.blockId]), coverage("deleted", ["deleted"])],
     assets: new AssetCollection(base.assets.entries.filter((asset) => asset.status === "available")),
     allowMissing: [],
+    allowMissingGroupChildren: [{
+      documentId,
+      surfaceId: warning.blockId,
+      groupId: warning.groupId,
+      childId: warning.childId,
+    }],
     warnings: [warning],
     missingAssetReferences: [],
     expectedNotes: new Map(registry.pages.map((page) => [page.id, `${page.frontmatter}\nContent\n`])),
   };
   await writeReports(options);
   await assert.doesNotReject(validateOutput(options));
+  await assert.rejects(
+    validateOutput({ ...options, allowMissingGroupChildren: [] }),
+    /unapproved edgeless/iu,
+  );
 
   for (const [field, value] of Object.entries({
     documentId: "other-document",
@@ -589,7 +603,7 @@ test("only the exact approved missing native group child tuple is accepted", asy
     childId: "other-child",
   })) {
     await assert.rejects(
-      validateOutput({ ...options, warnings: [{ ...warning, [field]: value } as ConversionWarning] }),
+      validateOutput({ ...options, warnings: [{ ...warning, [field]: value }] }),
       /unapproved edgeless|unknown document|uncovered block/iu,
     );
   }

@@ -3,7 +3,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
-import { sanitizeFilename } from "./paths.ts";
+import { compareCodeUnits, sanitizeFilename } from "./paths.ts";
 
 const MIME_EXTENSIONS: Readonly<Record<string, string>> = {
   "application/json": "json",
@@ -79,7 +79,7 @@ export class AssetCollection {
   private readonly bySourceId: ReadonlyMap<string, AssetReference>;
 
   constructor(entries: Iterable<AssetReference>) {
-    const ordered = [...entries].sort((left, right) => left.sourceId.localeCompare(right.sourceId));
+    const ordered = [...entries].sort((left, right) => compareCodeUnits(left.sourceId, right.sourceId));
     const bySourceId = new Map<string, AssetReference>();
     for (const entry of ordered) {
       if (bySourceId.has(entry.sourceId)) {
@@ -197,7 +197,7 @@ export async function extractAssets(
       throw new AssetError(`Asset "${sourceId}" has no MIME type.`);
     }
     const mime = normalizeMimeType(blob.mime);
-    const extension = MIME_EXTENSIONS[mime];
+    const extension = Object.hasOwn(MIME_EXTENSIONS, mime) ? MIME_EXTENSIONS[mime] : undefined;
     if (extension === undefined) {
       throw new AssetError(`Asset "${sourceId}" has unsupported MIME type "${blob.mime}".`);
     }
@@ -299,7 +299,7 @@ export async function extractSqliteAssets(
         return {
           data: row.data,
           mime: row.mime,
-          deletedAt: row.deleted_at as string | null | undefined ?? null,
+          deletedAt: row.deleted_at ?? null,
         };
       },
     });

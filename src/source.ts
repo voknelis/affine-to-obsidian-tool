@@ -259,9 +259,9 @@ export async function createConsistentBackup(
 }
 
 /** Decode an existing backup whose SQLite integrity has already been verified. */
-export async function decodeAffineWorkspaceBackup(
+function decodeAffineWorkspaceBackupSync(
   backupPath: string,
-): Promise<LoadedAffineWorkspace> {
+): LoadedAffineWorkspace {
   const database = new DatabaseSync(backupPath, { readOnly: true });
   const documents = new Map<string, AffineDocument>();
   try {
@@ -299,6 +299,11 @@ export async function decodeAffineWorkspaceBackup(
   } finally {
     database.close();
   }
+}
+
+/** Decode an existing backup whose SQLite integrity has already been verified. */
+export async function decodeAffineWorkspaceBackup(backupPath: string): Promise<LoadedAffineWorkspace> {
+  return await Promise.resolve(decodeAffineWorkspaceBackupSync(backupPath));
 }
 
 export async function loadAffineWorkspace(
