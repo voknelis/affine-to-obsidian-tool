@@ -1,0 +1,16 @@
+.idea/
+.vscode/*
+.gitlet/
+dist/
+node_modules/
+
+.DS_Store
+.env.*
+
+!.vscode/launch.json
+!.vscode/settings.json
+
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
