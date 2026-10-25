@@ -109,11 +109,12 @@ For an unchanged source and options, reruns produce identical paths and file byt
 ```sh
 npm ci
 npm run lint
+npm run lint:fix
 npm run typecheck
 npm test
 ```
 
-- ESLint uses type-aware rules from `typescript-eslint`; warnings are errors.
+- ESLint combines `@antfu/eslint-config` (`lessOpinionated: true`) for readable style with type-aware `typescript-eslint` safety rules; warnings are errors.
 - TypeScript runs in strict mode with no emit.
-- Tests use temporary synthetic SQLite/Yjs fixtures, not personal workspaces or a running AFFiNE instance.
+- Tests run on Vitest using temporary synthetic SQLite/Yjs fixtures, not personal workspaces or a running AFFiNE instance.
 - Development runs the CLI directly from `src/` using Node 24's native TypeScript support. `npm run build` emits JavaScript to `dist/`; `prepack` runs it automatically so npm consumers never need TypeScript or repository sources.

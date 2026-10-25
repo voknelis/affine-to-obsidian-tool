@@ -1,24 +1,24 @@
-import { homedir } from "node:os";
-import { resolve } from "node:path";
+import type { MissingGroupChildException } from './migration-policy.ts'
+import { homedir } from 'node:os'
+import { resolve } from 'node:path'
+import process from 'node:process'
+import { targetPathError } from './path-guard.ts'
 
-import { targetPathError } from "./path-guard.ts";
-import type { MissingGroupChildException } from "./migration-policy.ts";
-
-export type CliArguments =
-  | { help: true }
-  | {
-      help: false;
-      source: string;
-      target: string;
-      allowMissing: string[];
-      allowMissingGroupChildren: MissingGroupChildException[];
-      dryRun: boolean;
-    };
+export type CliArguments
+  = | { help: true }
+    | {
+      help: false
+      source: string
+      target: string
+      allowMissing: string[]
+      allowMissingGroupChildren: MissingGroupChildException[]
+      dryRun: boolean
+    }
 
 export class CliUsageError extends Error {
   constructor(message: string) {
-    super(message);
-    this.name = "CliUsageError";
+    super(message)
+    this.name = 'CliUsageError'
   }
 }
 
@@ -26,95 +26,102 @@ function optionValue(
   args: readonly string[],
   index: number,
   option: string,
-): { value: string; nextIndex: number } {
-  const argument = args[index];
-  const prefix = `${option}=`;
+): { value: string, nextIndex: number } {
+  const argument = args[index]
+  const prefix = `${option}=`
 
   if (argument?.startsWith(prefix)) {
-    const value = argument.slice(prefix.length);
+    const value = argument.slice(prefix.length)
     if (value.length === 0) {
-      throw new CliUsageError(`${option} requires a non-empty value.`);
+      throw new CliUsageError(`${option} requires a non-empty value.`)
     }
-    return { value, nextIndex: index };
+    return { value, nextIndex: index }
   }
 
-  const value = args[index + 1];
-  if (value === undefined || value.startsWith("-")) {
-    throw new CliUsageError(`${option} requires a value.`);
+  const value = args[index + 1]
+  if (value === undefined || value.startsWith('-')) {
+    throw new CliUsageError(`${option} requires a value.`)
   }
-  return { value, nextIndex: index + 1 };
+  return { value, nextIndex: index + 1 }
 }
 
 function validateTarget(source: string, target: string, cwd: string): void {
-  const error = targetPathError(source, target, cwd, homedir());
-  if (error !== undefined) throw new CliUsageError(error);
+  const error = targetPathError(source, target, cwd, homedir())
+  if (error !== undefined) {
+    throw new CliUsageError(error)
+  }
 }
 
 function missingGroupChildException(value: string): MissingGroupChildException {
-  const parts = value.split(":");
-  if (parts.length !== 4 || parts.some((part) => part.length === 0)) {
+  const parts = value.split(':')
+  if (parts.length !== 4 || parts.some(part => part.length === 0)) {
     throw new CliUsageError(
-      "--allow-missing-group-child requires <documentId:surfaceId:groupId:childId> with non-empty IDs.",
-    );
+      '--allow-missing-group-child requires <documentId:surfaceId:groupId:childId> with non-empty IDs.',
+    )
   }
-  const [documentId, surfaceId, groupId, childId] = parts;
+  const [documentId, surfaceId, groupId, childId] = parts
   if (documentId === undefined || surfaceId === undefined || groupId === undefined || childId === undefined) {
-    throw new CliUsageError("--allow-missing-group-child requires four IDs.");
+    throw new CliUsageError('--allow-missing-group-child requires four IDs.')
   }
-  return { documentId, surfaceId, groupId, childId };
+  return { documentId, surfaceId, groupId, childId }
 }
 
 export function parseArgs(
   args: readonly string[],
   cwd: string = process.cwd(),
 ): CliArguments {
-  let source: string | undefined;
-  let target: string | undefined;
-  const allowMissing: string[] = [];
-  const allowMissingGroupChildren: MissingGroupChildException[] = [];
+  let source: string | undefined
+  let target: string | undefined
+  const allowMissing: string[] = []
+  const allowMissingGroupChildren: MissingGroupChildException[] = []
 
-  let dryRun = false;
+  let dryRun = false
   for (let index = 0; index < args.length; index += 1) {
-    const argument = args[index];
+    const argument = args[index]
 
-    if (argument === "--help" || argument === "-h") {
-      return { help: true };
+    if (argument === '--help' || argument === '-h') {
+      return { help: true }
     }
 
-    if (argument === "--dry-run") {
-      dryRun = true;
-    } else if (argument === "--source" || argument?.startsWith("--source=")) {
-      const result = optionValue(args, index, "--source");
-      source = result.value;
-      index = result.nextIndex;
-    } else if (argument === "--target" || argument?.startsWith("--target=")) {
-      const result = optionValue(args, index, "--target");
-      target = result.value;
-      index = result.nextIndex;
-    } else if (
-      argument === "--allow-missing" ||
-      argument?.startsWith("--allow-missing=")
+    if (argument === '--dry-run') {
+      dryRun = true
+    }
+    else if (argument === '--source' || argument?.startsWith('--source=')) {
+      const result = optionValue(args, index, '--source')
+      source = result.value
+      index = result.nextIndex
+    }
+    else if (argument === '--target' || argument?.startsWith('--target=')) {
+      const result = optionValue(args, index, '--target')
+      target = result.value
+      index = result.nextIndex
+    }
+    else if (
+      argument === '--allow-missing'
+      || argument?.startsWith('--allow-missing=')
     ) {
-      const result = optionValue(args, index, "--allow-missing");
-      allowMissing.push(result.value);
-      index = result.nextIndex;
-    } else if (argument === "--allow-missing-group-child"
-      || argument?.startsWith("--allow-missing-group-child=")) {
-      const result = optionValue(args, index, "--allow-missing-group-child");
-      allowMissingGroupChildren.push(missingGroupChildException(result.value));
-      index = result.nextIndex;
-    } else {
-      throw new CliUsageError(`Unknown argument: ${argument ?? ""}`);
+      const result = optionValue(args, index, '--allow-missing')
+      allowMissing.push(result.value)
+      index = result.nextIndex
+    }
+    else if (argument === '--allow-missing-group-child'
+      || argument?.startsWith('--allow-missing-group-child=')) {
+      const result = optionValue(args, index, '--allow-missing-group-child')
+      allowMissingGroupChildren.push(missingGroupChildException(result.value))
+      index = result.nextIndex
+    }
+    else {
+      throw new CliUsageError(`Unknown argument: ${argument ?? ''}`)
     }
   }
 
   if (source === undefined) {
-    throw new CliUsageError("Missing required --source <path>.");
+    throw new CliUsageError('Missing required --source <path>.')
   }
 
-  const resolvedSource = resolve(cwd, source);
-  const resolvedTarget = resolve(cwd, target ?? "from_affine");
-  validateTarget(resolvedSource, resolvedTarget, cwd);
+  const resolvedSource = resolve(cwd, source)
+  const resolvedTarget = resolve(cwd, target ?? 'from_affine')
+  validateTarget(resolvedSource, resolvedTarget, cwd)
 
   return {
     help: false,
@@ -123,5 +130,5 @@ export function parseArgs(
     allowMissing,
     allowMissingGroupChildren,
     dryRun,
-  };
+  }
 }

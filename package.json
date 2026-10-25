@@ -16,22 +16,26 @@
     "node": ">=24"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "clean": "node --eval \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
+    "build": "npm run clean && tsc -p tsconfig.build.json",
     "prepack": "npm run build",
     "migrate": "node src/cli.ts",
-    "test": "node --test test/*.test.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint src test --max-warnings 0"
+    "lint": "eslint eslint.config.ts vitest.config.ts src test --max-warnings 0",
+    "lint:fix": "eslint eslint.config.ts vitest.config.ts src test --fix"
   },
   "dependencies": {
     "yjs": "^13.6.27"
   },
   "devDependencies": {
-    "@eslint/js": "^10.0.1",
+    "@antfu/eslint-config": "^10.0.0",
     "@types/node": "^24.10.0",
     "eslint": "^10.13.0",
     "jiti": "^2.7.0",
     "typescript": "^5.9.3",
-    "typescript-eslint": "^8.72.0"
+    "typescript-eslint": "^8.72.0",
+    "vitest": "^5.0.5"
   }
 }

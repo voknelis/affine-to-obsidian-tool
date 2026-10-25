@@ -1,15 +1,22 @@
-import js from "@eslint/js";
-import { defineConfig } from "eslint/config";
-import tseslint from "typescript-eslint";
+import antfu from '@antfu/eslint-config'
+import { defineConfig } from 'eslint/config'
+import tseslint from 'typescript-eslint'
+
+const styleConfig = await antfu({
+  type: 'lib',
+  lessOpinionated: true,
+  ignores: ['dist/**', 'node_modules/**'],
+  markdown: false,
+  typescript: {
+    tsconfigPath: 'tsconfig.json',
+  },
+})
 
 export default defineConfig(
-  {
-    ignores: ["dist/**", "node_modules/**"],
-  },
-  js.configs.recommended,
+  ...styleConfig,
   ...tseslint.configs.recommendedTypeChecked,
   {
-    files: ["src/**/*.ts", "test/**/*.ts"],
+    files: ['src/**/*.ts', 'test/**/*.ts'],
     languageOptions: {
       parserOptions: {
         projectService: true,
@@ -17,11 +24,4 @@ export default defineConfig(
       },
     },
   },
-  {
-    files: ["test/**/*.ts"],
-    // node:test owns the lifecycle of promises returned by registered tests.
-    rules: {
-      "@typescript-eslint/no-floating-promises": "off",
-    },
-  },
-);
+)
