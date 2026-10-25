@@ -2,12 +2,22 @@
   "name": "affine-to-obsidian-tool",
   "description": "Read-only, deterministic migration of AFFiNE Desktop workspaces to Obsidian Markdown.",
   "version": "0.1.0",
-  "private": true,
   "type": "module",
+  "bin": {
+    "affine-to-obsidian-tool": "dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "engines": {
     "node": ">=24"
   },
   "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepack": "npm run build",
     "migrate": "node src/cli.ts",
     "test": "node --test test/*.test.ts",
     "typecheck": "tsc --noEmit",

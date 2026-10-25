@@ -1,5 +1,7 @@
-import { resolve } from "node:path";
-import { pathToFileURL } from "node:url";
+#!/usr/bin/env node
+
+import { realpathSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 import { CliUsageError, parseArgs } from "./args.ts";
 import { migrateWorkspace } from "./migrate.ts";
@@ -53,7 +55,7 @@ export async function runCli(
 
 if (
   process.argv[1] !== undefined &&
-  import.meta.url === pathToFileURL(resolve(process.argv[1])).href
+  realpathSync(fileURLToPath(import.meta.url)) === realpathSync(process.argv[1])
 ) {
   process.exitCode = await runCli(process.argv.slice(2));
 }

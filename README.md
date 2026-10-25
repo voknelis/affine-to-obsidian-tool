@@ -10,18 +10,22 @@ Read-only, repeatable migration of an AFFiNE Desktop workspace into an Obsidian 
 
 AFFiNE and Obsidian are not required to run during conversion. AFFiNE Cloud APIs, accounts, cookies, and authentication tokens are not used.
 
-## Install
+## Run with npx
+
+No repository download is required:
 
 ```sh
-npm ci
+npx affine-to-obsidian-tool --help
 ```
 
 ## Usage
 
+**Before migration, create a complete local copy of your data in AFFiNE Desktop: Settings → Storage → Full backup. Wait until the operation finishes.** This synchronizes cloud documents and attachments into local storage. Without a full backup, the local snapshots or blobs can be incomplete, and the tool cannot migrate data that is not available locally.
+
 Always start with a dry run. It performs the complete backup, conversion, staging, and validation pipeline without creating or changing the target directory.
 
 ```sh
-npm run migrate -- \
+npx affine-to-obsidian-tool \
   --source "/path/to/AFFiNE/workspaces/<workspace>/storage.db" \
   --target "/path/to/vault/from_affine" \
   --dry-run
@@ -30,7 +34,7 @@ npm run migrate -- \
 After reviewing the summary, run the same command without `--dry-run` to replace the target:
 
 ```sh
-npm run migrate -- \
+npx affine-to-obsidian-tool \
   --source "/path/to/AFFiNE/workspaces/<workspace>/storage.db" \
   --target "/path/to/vault/from_affine"
 ```
@@ -38,7 +42,7 @@ npm run migrate -- \
 Show all options:
 
 ```sh
-npm run migrate -- --help
+npx affine-to-obsidian-tool --help
 ```
 
 ### Options
@@ -103,6 +107,7 @@ For an unchanged source and options, reruns produce identical paths and file byt
 ## Development
 
 ```sh
+npm ci
 npm run lint
 npm run typecheck
 npm test
@@ -111,4 +116,4 @@ npm test
 - ESLint uses type-aware rules from `typescript-eslint`; warnings are errors.
 - TypeScript runs in strict mode with no emit.
 - Tests use temporary synthetic SQLite/Yjs fixtures, not personal workspaces or a running AFFiNE instance.
-- The CLI runs directly on Node 24's native TypeScript support; no build step is required.
+- Development runs the CLI directly from `src/` using Node 24's native TypeScript support. `npm run build` emits JavaScript to `dist/`; `prepack` runs it automatically so npm consumers never need TypeScript or repository sources.
